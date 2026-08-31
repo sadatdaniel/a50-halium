@@ -24,9 +24,10 @@ none of them is guessable from documentation.
   a stale, frozen embedded IKCONFIG blob rather than the live kernel's real
   configuration. Verify kernel features empirically — does the feature work when
   used — not by reading either of those.
-* **`CONFIG_IPC_NS` at kernel level is a dead end.** Both `CONFIG_POSIX_MQUEUE=y`
-  and `CONFIG_SYSVIPC=y` (either satisfies its dependency) regress early boot,
-  in two different ways. Solve it in the container configuration instead.
+* **`CONFIG_IPC_NS` is satisfied by `CONFIG_SYSVIPC=y`, which boots fine.**
+  An inherited note claimed both it and `CONFIG_POSIX_MQUEUE=y` regress early
+  boot; only the latter does. See the dedicated section below, which was
+  checked against the live device.
 * **`CONFIG_FRAMEBUFFER_CONSOLE` crashes against the Samsung decon driver.**
   `CONFIG_VT=y` on its own is safe: `decon_notify.c` only hooks the fbdev
   notifier chain, which nothing but fbcon drives, and there is no
