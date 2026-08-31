@@ -80,3 +80,45 @@ none of them is guessable from documentation.
 * An idle device reports a **load average of ~16 forever**. It is 16 TrustZone
   kernel threads parked in uninterruptible sleep, not a spin. Read the runqueue
   field of `/proc/loadavg` instead.
+
+## Building the kernel: use the tree's own `build.sh`, never a hand-rolled `make`
+
+This is the single most expensive lesson in this port's history, and it is the
+answer to "why did a downloaded kernel boot when ours did not".
+
+Early attempts invoked `make` directly with a defconfig. Those kernels
+**compiled cleanly and never booted** — verified against the known-good ramdisk
+as a positive control, so the ramdisk was not the variable. The cause is that
+`build.sh` sets things a bare `make` does not:
+
+* `KCONFIG_BUILTINCONFIG` — a *second* baseline defconfig that Kconfig merges
+  through the environment. Miss it and the resulting `.config` is quietly
+  incomplete rather than wrong-looking.
+* `ANDROID_MAJOR_VERSION` and `PLATFORM_VERSION`
+* `LD_LIBRARY_PATH` for the bundled Proton Clang's own libraries
+
+Every kernel built through `./build.sh` has booted. Every hand-rolled one did
+not. `build/build-kernel.sh` therefore always shells out to the tree's own
+`build.sh` and never reimplements the build — that indirection is deliberate
+and should not be "cleaned up".
+
+The variant matters too: `-v recovery` is what produces the kernel this port
+boots. A different variant changes what gets packaged.
+
+## `CONFIG_SYSVIPC` is fine; `CONFIG_POSIX_MQUEUE` is not
+
+Both are ways to satisfy `CONFIG_IPC_NS`'s dependency, and an earlier note in
+this project claimed both regress early boot. **Half of that is wrong**, and it
+was checked against a live device rather than re-reasoned:
+
+* `CONFIG_SYSVIPC=y` — enabled in the currently-shipping, known-good kernel.
+  `/proc/sysvipc` exists with `msg`/`sem`/`shm`, and `ipcs -l` works. It boots.
+  A single session did once reproduce a bootloop after enabling it, twice, so
+  it was blamed; whatever actually caused that has since changed, and the claim
+  did not get re-tested before being written down as a rule.
+* `CONFIG_POSIX_MQUEUE` — **not** set, and reported (reproduced twice) to
+  bootloop when enabled. Left alone.
+
+The general lesson: check a config claim against `/proc` on the running device
+before trusting it. `/proc/config.gz` on this device reads a stale frozen
+IKCONFIG blob and will not tell you the truth, but the features themselves will.
