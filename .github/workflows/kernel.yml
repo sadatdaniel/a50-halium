@@ -47,6 +47,19 @@ jobs:
       - name: Report what was produced
         run: cat out/build-manifest.txt out/sha256sums.txt
 
+      # The reproducibility gate. kernel/expected-artifacts.sha256 records the
+      # hashes a correct build of the current pin produces. If a change to the
+      # pin, the patches or the build environment alters the output, this fails
+      # and the expected file has to be updated deliberately - with a rebuild
+      # and a boot test behind it, not silently.
+      - name: Verify artifacts match the recorded hashes
+        run: |
+          if [ ! -f kernel/expected-artifacts.sha256 ]; then
+            echo "::warning::No kernel/expected-artifacts.sha256 recorded yet - the build is not gated."
+            exit 0
+          fi
+          cd out && sha256sum -c ../kernel/expected-artifacts.sha256
+
       - uses: actions/upload-artifact@v4
         with:
           name: a50-boot-image

@@ -46,6 +46,9 @@ TOOLCHAIN_COMMIT="$(lock_get TOOLCHAIN_COMMIT)"
 BUILD_DEVICE="$(lock_get BUILD_DEVICE)"
 BUILD_VARIANT="$(lock_get BUILD_VARIANT)"
 BOOT_PARTITION_BYTES="$(lock_get BOOT_PARTITION_BYTES)"
+SOURCE_DATE_EPOCH="$(lock_get SOURCE_DATE_EPOCH)"
+KBUILD_BUILD_USER="$(lock_get KBUILD_BUILD_USER)"
+KBUILD_BUILD_HOST="$(lock_get KBUILD_BUILD_HOST)"
 
 SRC="$REPO_ROOT/kernel/src"
 TOOLCHAIN="$SRC/toolchain"
@@ -101,6 +104,32 @@ if [ "$TC_ACTUAL" != "$TOOLCHAIN_COMMIT" ]; then
     echo "E: toolchain is at $TC_ACTUAL, not the pinned $TOOLCHAIN_COMMIT" >&2
     exit 1
 fi
+
+# --- make the build deterministic --------------------------------------------
+# Without this section two builds of the same pin differ, and the sha256 sums
+# below would record noise rather than mean anything. Each export closes one
+# measured source of drift:
+#
+#   SOURCE_DATE_EPOCH / KBUILD_BUILD_TIMESTAMP
+#       the kernel compiles its build date into the banner in compile.h.
+#   KBUILD_BUILD_USER / KBUILD_BUILD_HOST
+#       otherwise the builder's own username and hostname are compiled in.
+#       upstream build.sh only sets these when BUILD_KERNEL_CI is true, which
+#       is not the path this script uses.
+#   GITHUB_RUN_NUMBER
+#       upstream's SET_LOCALVERSION interpolates it into LOCALVERSION for the
+#       default branch, so the string lands in the kernel version. Docker does
+#       not pass host environment through, but pin it rather than rely on that.
+export SOURCE_DATE_EPOCH
+export KBUILD_BUILD_USER KBUILD_BUILD_HOST
+export KBUILD_BUILD_TIMESTAMP="$(date -u -d "@$SOURCE_DATE_EPOCH" '+%a %b %e %H:%M:%S UTC %Y')"
+export GITHUB_RUN_NUMBER=0
+
+# The ramdisk is an uncompressed newc cpio built straight from a directory in
+# the source tree, so every file's mtime is baked into it and would otherwise
+# be whenever the checkout happened. Ordering and inode numbering are handled
+# by kernel/patches/0003.
+find "$SRC/tools/make/ramdisk" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 # --- build -------------------------------------------------------------------
 cd "$SRC"

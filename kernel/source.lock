@@ -27,3 +27,15 @@ BUILD_VARIANT=recovery
 # Hard limit from the device's own boot partition. A larger image does not
 # fail to flash - `dd` silently truncates it and the device will not boot.
 BOOT_PARTITION_BYTES=57671680
+
+# Fixed clock for the build, so two builds of the same pin produce byte-identical
+# artifacts. This is the upstream kernel commit's own author date, which makes it
+# a property of the pin rather than an arbitrary constant. It feeds
+# SOURCE_DATE_EPOCH and KBUILD_BUILD_TIMESTAMP; changing it changes every output
+# hash. 1763150940 = 2025-11-14T20:09:00Z.
+SOURCE_DATE_EPOCH=1763150940
+
+# Fixed identity in the kernel banner. Without these the builder's username and
+# hostname end up compiled into the image.
+KBUILD_BUILD_USER=a50-halium
+KBUILD_BUILD_HOST=reproducible

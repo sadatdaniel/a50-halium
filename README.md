@@ -30,6 +30,24 @@ clean GitHub runner that has never seen this device. **The badge is the claim.**
 If CI is green, the boot image can be rebuilt from nothing; if CI is red, it
 cannot, whatever this file says.
 
+### Bit-for-bit, not just "it builds"
+
+"Reproducible" here means the stronger thing: **the same pin produces
+byte-identical artifacts on a different machine.** That does not happen by
+accident, and this build closes four measured sources of drift:
+
+| Source of drift | Fix |
+|---|---|
+| Kernel banner build date (`compile.h`) | `SOURCE_DATE_EPOCH` / `KBUILD_BUILD_TIMESTAMP`, pinned to the upstream commit's own author date |
+| Builder's username and hostname compiled into the banner | `KBUILD_BUILD_USER` / `KBUILD_BUILD_HOST` pinned; upstream only sets these on its own CI path |
+| `LOCALVERSION` interpolating `$GITHUB_RUN_NUMBER` into the kernel version | pinned to a fixed value |
+| Ramdisk `find . \| cpio`: filesystem entry order, real inode numbers, per-file mtimes | `kernel/patches/0003` sorts the list and renumbers inodes; the build script normalises mtimes to `SOURCE_DATE_EPOCH` |
+
+`kernel/expected-artifacts.sha256` records the hashes the current pin must
+produce, and CI checks the build against it. Changing the pin, the patches or
+the build environment is expected to change those hashes — the point is that it
+cannot happen *silently*.
+
 ## We do not fork the kernel
 
 The upstream tree — [FreshROMs/android_kernel_samsung_exynos9610_mint](https://github.com/FreshROMs/android_kernel_samsung_exynos9610_mint)

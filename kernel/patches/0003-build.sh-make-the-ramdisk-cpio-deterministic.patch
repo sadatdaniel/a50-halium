@@ -1,0 +1,29 @@
+From: a50-halium <noreply@localhost>
+Subject: [PATCH 3/3] build.sh: make the ramdisk cpio deterministic
+
+The ramdisk is an uncompressed newc cpio built straight from a directory in
+the source tree. Two things in that pipeline vary between machines and make
+two builds of the same source produce different boot images:
+
+  * `find .` walks in filesystem order, so archive entry order depends on how
+    the checkout happened to land on disk.
+  * GNU cpio writes each file's real inode number into the newc header.
+
+Sorting the file list fixes the ordering, and --renumber-inodes replaces the
+inode numbers with a sequence starting from a fixed value. File mtimes are the
+third source and are normalised by build/build-kernel.sh before this runs,
+since those come from the filesystem rather than from this command.
+
+With all three closed, the boot image hashes identically across machines.
+
+--- a/build.sh
++++ b/build.sh
+@@ -221,7 +221,7 @@ BUILD_RAMDISK() {
+     script_echo "Compression type: $comptype"
+ 
+     cd "$TOP/tools/make/ramdisk" || exit
+-    find . | cpio -R 0:0 -H newc --quiet -o | $compcmd > "$TOP/tools/make/$RAMDISK"
++    find . | LC_ALL=C sort | cpio -R 0:0 -H newc --renumber-inodes --quiet -o | $compcmd > "$TOP/tools/make/$RAMDISK"
+     cd "$TOP" || exit
+ 
+     if [ ! -f "$TOP/tools/make/$RAMDISK" ]; then
