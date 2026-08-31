@@ -42,7 +42,7 @@ jobs:
           docker run --rm \
             -v "$PWD:/src" -w /src \
             a50-halium-build \
-            ./build/build-kernel.sh --jobs "$(nproc)"
+            ./build/build-kernel.sh
 
       - name: Report what was produced
         run: cat out/build-manifest.txt out/sha256sums.txt

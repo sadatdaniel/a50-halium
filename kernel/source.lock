@@ -39,3 +39,11 @@ SOURCE_DATE_EPOCH=1763150940
 # hostname end up compiled into the image.
 KBUILD_BUILD_USER=a50-halium
 KBUILD_BUILD_HOST=reproducible
+
+# Parallelism is pinned, not taken from the build machine. This kernel links
+# with LTO, and LLVM's LTO codegen can partition differently depending on how
+# many jobs it is given, which changes the emitted code and therefore the
+# artifact hash. Pinning costs build time on a large machine and buys an
+# identical result everywhere. Overriding it with --jobs is allowed for a quick
+# local compile, but the output is then not comparable to a CI build.
+BUILD_JOBS=4

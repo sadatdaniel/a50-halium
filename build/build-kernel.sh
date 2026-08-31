@@ -14,7 +14,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT_DIR="$REPO_ROOT/out"
-JOBS="$(nproc)"
+JOBS=""                 # empty until the pin is read; see BUILD_JOBS below
 KEEP_SRC=0
 
 while [ $# -gt 0 ]; do
@@ -49,6 +49,19 @@ BOOT_PARTITION_BYTES="$(lock_get BOOT_PARTITION_BYTES)"
 SOURCE_DATE_EPOCH="$(lock_get SOURCE_DATE_EPOCH)"
 KBUILD_BUILD_USER="$(lock_get KBUILD_BUILD_USER)"
 KBUILD_BUILD_HOST="$(lock_get KBUILD_BUILD_HOST)"
+BUILD_JOBS="$(lock_get BUILD_JOBS)"
+
+# Parallelism comes from the pin, not from the build machine, because this
+# kernel links with LTO and LLVM's LTO codegen can partition differently at
+# different job counts - which changes the emitted code and the artifact hash.
+# --jobs still overrides, for a quick local compile, but then the result is not
+# comparable with anything else and the script says so.
+if [ -n "$JOBS" ] && [ "$JOBS" != "$BUILD_JOBS" ]; then
+    echo "W: building with -j$JOBS instead of the pinned -j$BUILD_JOBS."
+    echo "W: the resulting Image is NOT comparable to a pinned build's hash."
+else
+    JOBS="$BUILD_JOBS"
+fi
 
 SRC="$REPO_ROOT/kernel/src"
 TOOLCHAIN="$SRC/toolchain"
