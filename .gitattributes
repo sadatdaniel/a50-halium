@@ -1,0 +1,34 @@
+# This repository is consumed on Linux - by Docker build containers and by
+# shell scripts that parse checked-in data files - but it is routinely cloned
+# on Windows, where git's default core.autocrlf=true rewrites every text file
+# on checkout. That breaks the repository's central claim (rebuild from a
+# clean checkout) and it breaks it SILENTLY-ISH:
+#
+#   * build/build-kernel.sh gets a "#!/bin/bash\r" shebang, and the kernel
+#     reports "no such file or directory" for a file that plainly exists.
+#     Measured here: a fresh `git clone` on Windows, then
+#     `docker start -a` => `exec ./build/build-kernel.sh: no such file or
+#     directory`.
+#   * kernel/patches/*.patch gain CRLF, so `git apply` either refuses them or
+#     applies content that differs byte-for-byte from what CI applied - which
+#     would change the artifact hash without changing the pin.
+#   * kernel/source.lock is parsed with `cut -d= -f2-`, so every pinned value
+#     would carry a trailing CR (a commit sha that never matches, a
+#     BOOT_PARTITION_BYTES that fails integer comparison).
+#
+# a50-droidian already carries this file for the same reason. Force LF.
+* text=auto eol=lf
+*.sh text eol=lf
+*.patch text eol=lf
+*.diff text eol=lf
+*.config text eol=lf
+*.lock text eol=lf
+*.sha256 text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+Dockerfile text eol=lf
+
+*.img binary
+*.gz binary
+*.xz binary
+*.zip binary

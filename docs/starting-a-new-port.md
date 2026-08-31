@@ -122,7 +122,17 @@ On Windows hosts, `docker exec` paths get mangled by MSYS — prefix with
 `MSYS_NO_PATHCONV=1`. Bind mounts are worse: the container-side half of
 `-v host:container` gets rewritten and the mount silently lands nowhere, so a
 build "succeeds" while its output goes into an anonymous volume. Use
-`docker create` + `docker cp` instead.
+`docker create` + `docker cp` instead. Note that `MSYS_NO_PATHCONV=1` stops
+*both* halves being rewritten, so the host half then has to be written
+Windows-style (`C:/Users/...`) or Docker cannot find it.
+
+Also on Windows: git's default `core.autocrlf=true` rewrites every text file on
+checkout, and a clean clone of this repository then **cannot build** - the
+container reports `exec ./build/build-kernel.sh: no such file or directory` for
+a file that is plainly there, because the shebang is `#!/bin/bash\r`. This was
+measured, not predicted, on 2026-09-01. The repository now carries a
+`.gitattributes` forcing LF; if you cloned it before that existed, re-clone with
+`git clone -c core.autocrlf=false`.
 
 **You should not need that container.** `a50-halium` rebuilds the kernel from
 scratch:
