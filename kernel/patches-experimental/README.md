@@ -58,3 +58,18 @@ reason this patch is parked here rather than deleted.
    out over the network during the loop window.
 3. If Android init is the one panicking, look at what the Bluetooth HAL service
    does differently once `/dev/vhci` exists and `AF_BLUETOOTH` is available.
+
+### Update, 2026-08-31: Bluetooth is now isolated as the cause
+
+The caveat above — that the bootloop was attributable to Bluetooth *and* the
+debug-patch removal together — has been resolved by testing the other variable
+on its own.
+
+A kernel with the debug patch removed and **no Bluetooth** (build
+`074aad86958de6b8a4914269826f87f70c7eeb5315bb3842e4d935dacd566be6`) was
+packaged with the same known-good ramdisk, flashed, and **booted normally**:
+Android container `RUNNING`, Phosh active, stable minutes in.
+
+So removing the debug patch is safe, and this Bluetooth patch is the sole
+remaining explanation for the bootloop. The investigation steps above stand,
+and step 1 is now done.

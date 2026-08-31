@@ -89,11 +89,22 @@ of failing.
 
 ## Status
 
-Early. What exists today: the pinned, containerised kernel build
+**The kernel this repository builds is boot-verified on real hardware.**
+Build `074aad86…` was packaged with the known-good ramdisk, flashed, and booted:
+Android LXC container `RUNNING`, Phosh active, stable well past the ~10 s mark
+where this device's bootloops announce themselves.
+
+It is also bit-for-bit reproducible: a GitHub runner and a local container
+produced byte-identical Images, and `kernel/expected-artifacts.sha256` now gates
+CI against that hash.
+
+What exists today: the pinned, containerised kernel build
 above, the patch series, the Kconfig fragments, and the device facts.
 
-What does not exist yet: vendor blob extraction scripts, an `android-rootfs`
-recipe, and any published release artifact. Those are next.
+What does not exist yet: a reproducible **ramdisk** (the boot image above reuses one
+extracted from a known-good image, which is the next gap to close), vendor blob
+extraction scripts, and an `android-rootfs`
+recipe. Those are next.
 
 The kernel this produces is known to boot a full Droidian userspace with
 working display, touch, Wi-Fi and audio — see
