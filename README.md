@@ -56,15 +56,16 @@ cannot happen *silently*.
 ## We do not fork the kernel
 
 The upstream tree — [FreshROMs/android_kernel_samsung_exynos9610_mint](https://github.com/FreshROMs/android_kernel_samsung_exynos9610_mint)
-— is public and maintained, and our entire delta against it is **two patches,
-about 65 lines**:
+— is public and maintained, and our entire delta against it is **three small patches,
+about 70 lines**:
 
 | Patch | What it does |
 |---|---|
 | `0001-fstab-drop-the-product-first_stage_mount-entries` | This device has no `/product` partition, and Android init treats a missing `first_stage_mount` entry as fatal. |
 | `0002-build.sh-append-the-Kconfig-set-a-Linux-userspace-needs` | Turns off Samsung's integrity/anti-exploit subsystems and turns on what systemd, LXC, `lxc-net`, Phosh and the Bluetooth stack need. Every option was added one at a time in response to a real boot failure. |
+| `0003-build.sh-make-the-ramdisk-cpio-deterministic` | Sorts the ramdisk file list and renumbers cpio inodes, so the same source produces the same bytes on any machine. |
 
-Copying a 200 MB tree to carry 65 lines would add a maintenance burden and make
+Copying a 200 MB tree to carry 70 lines would add a maintenance burden and make
 it harder, not easier, to follow upstream. A pinned commit plus a patch series
 says exactly what is ours.
 
@@ -87,13 +88,13 @@ of failing.
 
 ## Status
 
-Early. What exists today: the pinned, containerised kernel and boot-image build
+Early. What exists today: the pinned, containerised kernel build
 above, the patch series, the Kconfig fragments, and the device facts.
 
 What does not exist yet: vendor blob extraction scripts, an `android-rootfs`
 recipe, and any published release artifact. Those are next.
 
-The boot image this produces is known to boot a full Droidian userspace with
+The kernel this produces is known to boot a full Droidian userspace with
 working display, touch, Wi-Fi and audio — see
 [a50-droidian](https://github.com/sadatdaniel/a50-droidian) for that side of the
 work and for the porting narrative.
