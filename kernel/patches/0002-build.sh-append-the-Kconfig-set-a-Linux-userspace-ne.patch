@@ -1,4 +1,4 @@
-From ca9c2224c1f615ce23b9384d22b4a701e4a0db63 Mon Sep 17 00:00:00 2001
+From fe57446b95656d52a7f3544e91701c869665b14f Mon Sep 17 00:00:00 2001
 From: sadatdaniel <sadatdaniel@yahoo.com>
 Date: Mon, 31 Aug 2026 13:23:59 +0000
 Subject: [PATCH 2/2] build.sh: append the Kconfig set a Linux userspace needs
@@ -22,21 +22,14 @@ Groups, and what each is for:
   driver, not bare VT. decon_notify.c only hooks the fbdev notifier chain, which
   nothing but fbcon drives; there is no register_vt_notifier anywhere in the
   dpu20 tree.
-- BT, BT_BREDR, BT_LE, BT_HCIVHCI, BT_RFCOMM(_TTY), BT_BNEP*, BT_HIDP: the Linux
-  Bluetooth stack. CONFIG_SCSC_BT was already set and gives /dev/scsc_h4_0 for
-  Samsung own HAL, but with CONFIG_BT unset there is no AF_BLUETOOTH and no
-  /dev/vhci, so bluebinder died with ENODEV. BT_HCIVHCI is the load-bearing one.
-  CONFIG_SCSC_BT_BLUEZ is deliberately left unset so the Samsung driver does not
-  register its own hci device and race the Android HAL for the same chip.
-  NOT YET BOOT-TESTED - see a50-halium docs.
 - CMDLINE: this bootloader silently ignores mkbootimg --cmdline, so anything
   that must take effect has to be compiled in.
 ---
- build.sh | 63 +++++++++++++++++++++++++++++++++++++++++++++++++++++++-
- 1 file changed, 62 insertions(+), 1 deletion(-)
+ build.sh | 38 +++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 37 insertions(+), 1 deletion(-)
 
 diff --git a/build.sh b/build.sh
-index eacd8b5f9..c16206de7 100755
+index eacd8b5f9..3d48b4417 100755
 --- a/build.sh
 +++ b/build.sh
 @@ -181,7 +181,7 @@ BUILD_KERNEL() {
@@ -48,7 +41,7 @@ index eacd8b5f9..c16206de7 100755
          ;;
      clang)
          make -C "$TOP" CC="$BUILD_PREF_COMPILER" LLVM=1 "$BUILD_DEVICE_TMP_CONFIG" LOCALVERSION="$LOCALVERSION" 2>&1 | sed 's/^/     /'
-@@ -494,6 +494,67 @@ if $BUILD_KERNEL_PERMISSIVE; then
+@@ -494,6 +494,42 @@ if $BUILD_KERNEL_PERMISSIVE; then
  	merge_config selinux-permissive
  fi
  
@@ -85,31 +78,6 @@ index eacd8b5f9..c16206de7 100755
 +    echo "CONFIG_NF_NAT_IPV6=y"
 +    echo "CONFIG_IP6_NF_NAT=y"
 +    echo "CONFIG_IP6_NF_TARGET_MASQUERADE=y"
-+    # Bluetooth (see docs/bluetooth.md and kernel/09-kernel-config-bluetooth.config
-+    # in the a50-droidian repo for the full reasoning and the live evidence).
-+    #
-+    # CONFIG_SCSC_BT=y was ALREADY enabled in this tree and provides /dev/scsc_h4_0,
-+    # which Samsung's own android.hardware.bluetooth@1.0-service (confirmed running
-+    # in the LXC container, PID 122) drives. What was missing is the LINUX side:
-+    # with CONFIG_BT unset there is no AF_BLUETOOTH at all - hciconfig reports
-+    # "Can't open HCI socket.: Address family not supported by protocol" - and,
-+    # critically, no /dev/vhci. bluebinder, which proxies HCI from the Android HAL
-+    # into the Linux stack, therefore died with ENODEV ("Error: code: 19 (No such
-+    # device)"). CONFIG_BT_HCIVHCI is the load-bearing option here.
-+    #
-+    # CONFIG_SCSC_BT_BLUEZ is deliberately left unset: we do NOT want the Samsung
-+    # driver registering its own hci device directly with BlueZ and racing the
-+    # Android HAL for the same chip. The vendor-HAL path is the one this port uses.
-+    echo "CONFIG_BT=y"
-+    echo "CONFIG_BT_BREDR=y"
-+    echo "CONFIG_BT_LE=y"
-+    echo "CONFIG_BT_HCIVHCI=y"
-+    echo "CONFIG_BT_RFCOMM=y"
-+    echo "CONFIG_BT_RFCOMM_TTY=y"
-+    echo "CONFIG_BT_BNEP=y"
-+    echo "CONFIG_BT_BNEP_MC_FILTER=y"
-+    echo "CONFIG_BT_BNEP_PROTO_FILTER=y"
-+    echo "CONFIG_BT_HIDP=y"
 +    echo 'CONFIG_CMDLINE="quiet androidboot.init_fatal_panic=true androidboot.init_fatal_reboot_target=recovery rcu_nocbs=0-3 noirqdebug nosoftlockup mce=ignore_ce cgroup_disable=pressure systemd.unified_cgroup_hierarchy=0"'
 +} >> "$BUILD_CONFIG_DIR/$BUILD_DEVICE_TMP_CONFIG"
 +

@@ -62,7 +62,7 @@ about 70 lines**:
 | Patch | What it does |
 |---|---|
 | `0001-fstab-drop-the-product-first_stage_mount-entries` | This device has no `/product` partition, and Android init treats a missing `first_stage_mount` entry as fatal. |
-| `0002-build.sh-append-the-Kconfig-set-a-Linux-userspace-needs` | Turns off Samsung's integrity/anti-exploit subsystems and turns on what systemd, LXC, `lxc-net`, Phosh and the Bluetooth stack need. Every option was added one at a time in response to a real boot failure. |
+| `0002-build.sh-append-the-Kconfig-set-a-Linux-userspace-needs` | Turns off Samsung's integrity/anti-exploit subsystems and turns on what systemd, LXC, `lxc-net` and Phosh need. Every option was added one at a time in response to a real boot failure, and the whole set is boot-tested. |
 | `0003-build.sh-make-the-ramdisk-cpio-deterministic` | Sorts the ramdisk file list and renumbers cpio inodes, so the same source produces the same bytes on any machine. |
 
 Copying a 200 MB tree to carry 70 lines would add a maintenance burden and make
@@ -73,7 +73,8 @@ says exactly what is ours.
 
 ```
 kernel/source.lock            every pinned input; the single source of truth
-kernel/patches/               this port's patch series, applied by the build
+kernel/patches/                boot-tested; these are what the build applies
+kernel/patches-experimental/  written but NOT boot-tested - read its README
 kernel/patches-historical/    kept for the record, never applied - read its README
 kernel/config/                Kconfig fragments, each documenting why it exists
 build/Dockerfile              pinned build environment (Ubuntu 22.04)
