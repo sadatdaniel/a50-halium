@@ -120,7 +120,7 @@ work and for the porting narrative.
 ## Ports built on this
 
 * [a50-droidian](https://github.com/sadatdaniel/a50-droidian) — Droidian (Debian + Phosh). Working.
-* Ubuntu Touch — planned.
+* Ubuntu Touch — planned. **Start with [`docs/starting-a-new-port.md`](docs/starting-a-new-port.md).**
 
 ## A warning worth reading before you build anything
 
