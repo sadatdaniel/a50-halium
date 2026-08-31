@@ -1,0 +1,207 @@
+diff --git a/init/initramfs.c b/init/initramfs.c
+index a8e5a41b2..5ce869b34 100644
+--- a/init/initramfs.c
++++ b/init/initramfs.c
+@@ -21,6 +21,9 @@
+ #include <linux/utime.h>
+ #include <linux/file.h>
+ #include <linux/initramfs.h>
++#include <linux/fcntl.h>
++#include <linux/stat.h>
++#include <linux/kdev_t.h>
+ 
+ static ssize_t __init xwrite(int fd, const char *p, size_t count)
+ {
+@@ -621,9 +624,46 @@ static int __init skip_initramfs_param(char *str)
+ __setup("skip_initramfs", skip_initramfs_param);
+ #endif
+ 
++
++static void __init raw_diag_write2(int slot, const char *msg)
++{
++	int fd;
++	char devpath[] = "/diagdev2";
++	char buf[512];
++	loff_t pos;
++	mm_segment_t old_fs;
++
++	memset(buf, 0, sizeof(buf));
++	snprintf(buf, sizeof(buf), "%s", msg);
++	printk(KERN_EMERG "RAWDIAG: %s\n", msg);
++
++	old_fs = get_fs();
++	set_fs(KERNEL_DS);
++
++	sys_unlink((const char __user *)devpath);
++	if (sys_mknod((const char __user *)devpath, S_IFBLK | 0600, MKDEV(259, 16)) < 0) {
++		set_fs(old_fs);
++		return;
++	}
++
++	fd = sys_open((const char __user *)devpath, O_WRONLY, 0);
++	if (fd < 0) {
++		set_fs(old_fs);
++		return;
++	}
++
++	pos = (loff_t)(1500010 + slot) * 512;
++	sys_lseek(fd, pos, SEEK_SET);
++	sys_write(fd, buf, sizeof(buf));
++	sys_close(fd);
++	sys_sync(); /* debug patch: force write-through, don't lose it to a later crash/reboot */
++	set_fs(old_fs);
++}
++
+ static int __init populate_rootfs(void)
+ {
+ 	char *err;
++	raw_diag_write2(0, "DIAG2 slot0: populate_rootfs ENTERED");
+ 
+ #ifdef CONFIG_INITRAMFS_SKIP
+ 	if (do_skip_initramfs) {
+@@ -637,13 +677,16 @@ static int __init populate_rootfs(void)
+ 	err = unpack_to_rootfs(__initramfs_start, __initramfs_size);
+ 	if (err)
+ 		panic("%s", err); /* Failed to decompress INTERNAL initramfs */
++	raw_diag_write2(2, "DIAG2 slot2: builtin initramfs unpack done");
+ 	/* If available load the bootloader supplied initrd */
+ 	if (initrd_start && !IS_ENABLED(CONFIG_INITRAMFS_FORCE)) {
+ #ifdef CONFIG_BLK_DEV_RAM
+ 		int fd;
++		raw_diag_write2(3, "DIAG2 slot3: entered CONFIG_BLK_DEV_RAM branch");
+ 		printk(KERN_INFO "Trying to unpack rootfs image as initramfs...\n");
+ 		err = unpack_to_rootfs((char *)initrd_start,
+ 			initrd_end - initrd_start);
++		raw_diag_write2(4, err ? "DIAG2 slot4: unpack_to_rootfs(initrd) FAILED" : "DIAG2 slot4: unpack_to_rootfs(initrd) SUCCESS");
+ 		if (!err) {
+ 			free_initrd();
+ 			goto done;
+@@ -678,11 +721,13 @@ static int __init populate_rootfs(void)
+ #endif
+ 	}
+ 	flush_delayed_fput();
++	raw_diag_write2(6, "DIAG2 slot6: reached flush_delayed_fput");
+ 	/*
+ 	 * Try loading default modules from initramfs.  This gives
+ 	 * us a chance to load before device_initcalls.
+ 	 */
+ 	load_default_modules();
++	raw_diag_write2(7, "DIAG2 slot7: populate_rootfs about to return 0");
+ 
+ 	return 0;
+ }
+diff --git a/init/main.c b/init/main.c
+index fc60c55fa..95b0125a9 100644
+--- a/init/main.c
++++ b/init/main.c
+@@ -76,6 +76,9 @@
+ #include <linux/ptrace.h>
+ #include <linux/pti.h>
+ #include <linux/blkdev.h>
++#include <linux/fcntl.h>
++#include <linux/stat.h>
++#include <linux/kdev_t.h>
+ #include <linux/elevator.h>
+ #include <linux/sched_clock.h>
+ #include <linux/sched/task.h>
+@@ -1187,6 +1190,49 @@ static int try_to_run_init_process(const char *init_filename)
+ 	return ret;
+ }
+ 
++
++/* --- raw block-device diagnostic writer (debug patch, not upstream) ---
++ * Writes a fixed-size, NUL-padded message directly to a raw sector on
++ * the userdata block device (259,16 = /dev/block/sda32 on this device),
++ * bypassing the VFS/rootfs entirely. Survives any later kernel boot
++ * since it is a genuine physical write, unlike the sec_debug kmsg
++ * ring buffer which gets memset() to zero on every boot.
++ */
++static void __init raw_diag_write(int slot, const char *msg)
++{
++	int fd;
++	char devpath[] = "/diagdev";
++	char buf[512];
++	loff_t pos;
++	mm_segment_t old_fs;
++
++	memset(buf, 0, sizeof(buf));
++	snprintf(buf, sizeof(buf), "%s", msg);
++	printk(KERN_EMERG "RAWDIAG: %s\n", msg);
++
++	old_fs = get_fs();
++	set_fs(KERNEL_DS);
++
++	sys_unlink((const char __user *)devpath);
++	if (sys_mknod((const char __user *)devpath, S_IFBLK | 0600, MKDEV(259, 16)) < 0) {
++		set_fs(old_fs);
++		return;
++	}
++
++	fd = sys_open((const char __user *)devpath, O_WRONLY, 0);
++	if (fd < 0) {
++		set_fs(old_fs);
++		return;
++	}
++
++	pos = (loff_t)(1500000 + slot) * 512;
++	sys_lseek(fd, pos, SEEK_SET);
++	sys_write(fd, buf, sizeof(buf));
++	sys_close(fd);
++	sys_sync(); /* debug patch: force write-through, don't lose it to a later crash/reboot */
++	set_fs(old_fs);
++}
++
+ static noinline void __init kernel_init_freeable(void);
+ 
+ #if defined(CONFIG_STRICT_KERNEL_RWX) || defined(CONFIG_STRICT_MODULE_RWX)
+@@ -1334,9 +1380,22 @@ static noinline void __init kernel_init_freeable(void)
+ 	if (!ramdisk_execute_command)
+ 		ramdisk_execute_command = "/init";
+ 
+-	if (sys_access((const char __user *) ramdisk_execute_command, 0) != 0) {
+-		ramdisk_execute_command = NULL;
+-		prepare_namespace();
++	raw_diag_write(0, "DIAG slot0: about to check sys_access on ramdisk_execute_command");
++
++	{
++		int __diag_ret = sys_access((const char __user *) ramdisk_execute_command, 0);
++		char __diag_buf[128];
++		snprintf(__diag_buf, sizeof(__diag_buf), "DIAG slot1: sys_access(%s,0) = %d", ramdisk_execute_command, __diag_ret);
++		raw_diag_write(1, __diag_buf);
++
++		if (__diag_ret != 0) {
++			raw_diag_write(2, "DIAG slot2: access FAILED, going to prepare_namespace()");
++			ramdisk_execute_command = NULL;
++			prepare_namespace();
++			raw_diag_write(3, "DIAG slot3: prepare_namespace() returned");
++		} else {
++			raw_diag_write(2, "DIAG slot2: access SUCCEEDED, keeping ramdisk_execute_command");
++		}
+ 	}
+ 
+ 	/*
+diff --git a/lib/lz4/lz4_decompress.c b/lib/lz4/lz4_decompress.c
+index 7e57955aa..51d021a2a 100644
+--- a/lib/lz4/lz4_decompress.c
++++ b/lib/lz4/lz4_decompress.c
+@@ -533,6 +533,7 @@ static FORCE_INLINE int __LZ4_decompress_generic(
+ 		/* get matchlength */
+ 		length = token & ML_MASK;
+ 
++safe_match_copy:
+ _copy_match:
+ 		if ((checkOffset) && (unlikely(match + dictSize < lowPrefix))) {
+ 			/* Error : offset outside buffers */
+diff --git a/tools/make/ramdisk/fstab.exynos9610 b/tools/make/ramdisk/fstab.exynos9610
+index 036a007bb..9a0834d84 100644
+--- a/tools/make/ramdisk/fstab.exynos9610
++++ b/tools/make/ramdisk/fstab.exynos9610
+@@ -7,8 +7,6 @@
+ /dev/block/platform/13520000.ufs/by-name/system     /system     erofs   ro  wait,first_stage_mount
+ /dev/block/platform/13520000.ufs/by-name/vendor     /vendor     ext4    ro  wait,first_stage_mount
+ /dev/block/platform/13520000.ufs/by-name/vendor     /vendor     erofs   ro  wait,first_stage_mount
+-/dev/block/platform/13520000.ufs/by-name/product    /product    ext4    ro  wait,first_stage_mount
+-/dev/block/platform/13520000.ufs/by-name/product    /product    erofs   ro  wait,first_stage_mount
+ 
+ /dev/block/platform/13520000.ufs/by-name/cache      /cache              ext4	noatime,nosuid,nodev,noauto_da_alloc,discard,journal_checksum,data=ordered,errors=panic    wait,check
+ /dev/block/platform/13520000.ufs/by-name/userdata   /data               ext4	noatime,nosuid,nodev,noauto_da_alloc,discard,journal_checksum,data=ordered,errors=panic    latemount,wait,check,reservedsize=128M

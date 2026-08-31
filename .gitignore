@@ -1,0 +1,11 @@
+# Build outputs - published as GitHub Releases, never committed
+out/
+*.img
+Image
+*.tar.gz
+*.zip
+*.log
+
+# Working checkouts created by build/build-kernel.sh
+kernel/src/
+kernel/toolchain/

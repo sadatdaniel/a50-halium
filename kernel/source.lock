@@ -1,0 +1,29 @@
+# Everything the kernel build is pinned to. build/build-kernel.sh reads this
+# file; nothing else should hardcode these values.
+#
+# Changing any line here changes the resulting kernel binary. Treat an edit as
+# a real change: rebuild, flash, boot-test, then commit with the evidence.
+
+# Upstream kernel tree. Linux 4.14.194, Exynos 9610, maintained by FreshROMs.
+# We do not fork it - our own changes are the patch series in kernel/patches/.
+KERNEL_REPO=https://github.com/FreshROMs/android_kernel_samsung_exynos9610_mint
+KERNEL_BRANCH=android-14.0
+KERNEL_COMMIT=bec0c2aff1ee8a02ac9f582d60fe611f1d2bc939
+
+# Toolchain: Proton Clang, as shipped by the same people who maintain the
+# kernel tree. build.sh clones this itself and then runs `git pull` on it,
+# which would silently move the build off any pin - so build-kernel.sh clones
+# it at this exact commit in DETACHED HEAD state, where that `git pull` fails
+# harmlessly instead of advancing the toolchain under us.
+TOOLCHAIN_REPO=https://gitlab.com/TenSeventy7/exynos9610_toolchains_fresh.git
+TOOLCHAIN_BRANCH=proton
+TOOLCHAIN_COMMIT=32074ae4fc8e2269569fdff26a22da037388c3e3
+TOOLCHAIN_DESC=proton-clang 210521
+
+# build.sh arguments. Both are mandatory; a bare invocation only prints usage.
+BUILD_DEVICE=a50
+BUILD_VARIANT=recovery
+
+# Hard limit from the device's own boot partition. A larger image does not
+# fail to flash - `dd` silently truncates it and the device will not boot.
+BOOT_PARTITION_BYTES=57671680

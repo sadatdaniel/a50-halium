@@ -1,0 +1,70 @@
+name: kernel
+
+# Proves the claim this repository exists to make: that the A50 boot image can
+# be rebuilt from nothing but this repository, on a machine that has never seen
+# the device. If this job is green, the build is reproducible. If it is not,
+# the build is not reproducible, whatever any README says.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'kernel/**'
+      - 'build/**'
+      - '.github/workflows/kernel.yml'
+  pull_request:
+    paths:
+      - 'kernel/**'
+      - 'build/**'
+      - '.github/workflows/kernel.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Kernel source, toolchain and object tree together need well over what a
+      # runner has spare by default.
+      - name: Reclaim runner disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          df -h /
+
+      - name: Build the build environment
+        run: docker build -t a50-halium-build ./build
+
+      - name: Build kernel and boot image
+        run: |
+          docker run --rm \
+            -v "$PWD:/src" -w /src \
+            a50-halium-build \
+            ./build/build-kernel.sh --jobs "$(nproc)"
+
+      - name: Report what was produced
+        run: cat out/build-manifest.txt out/sha256sums.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: a50-boot-image
+          path: |
+            out/Image
+            out/boot.img
+            out/sha256sums.txt
+            out/build-manifest.txt
+          retention-days: 30
+
+      # A tag publishes the same artifacts as a release, so a flashable image
+      # has a permanent home and a checksum anyone can verify.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/Image
+            out/boot.img
+            out/sha256sums.txt
+            out/build-manifest.txt
