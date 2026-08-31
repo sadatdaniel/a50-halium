@@ -3,7 +3,7 @@
 **Reproducible device base for the Samsung Galaxy A50** (SM-A505F, Exynos 9610,
 codename `a50`, Android 11 vendor base `RP1A.200720.012`).
 
-This repository builds the kernel and boot image, records how to extract the
+This repository builds the kernel reproducibly, records how to extract the
 vendor blobs, and writes down what is actually true about this device. It is
 deliberately **distro-agnostic** — nothing here knows about Droidian or Ubuntu
 Touch. Those live in their own repositories and consume what this one produces.
@@ -14,11 +14,16 @@ it. That is the entire point.
 ## What "reproducible" means here, concretely
 
 Everything the build depends on is pinned in one file, [`kernel/source.lock`](kernel/source.lock):
-the upstream kernel commit, the toolchain commit, the build arguments, and the
-device's boot-partition size limit. `build/build-kernel.sh` reads that file,
+the upstream kernel commit, the toolchain commit, the build arguments, the fixed
+build clock, and the device's boot-partition limit. `build/build-kernel.sh` reads it,
 fetches both trees at exactly those commits, applies this port's patch series,
-builds, refuses to finish if the image would not fit the partition, and writes
-a manifest plus sha256 sums of everything it produced.
+builds, and writes
+a manifest plus sha256 sums of what it produced.
+
+`build.sh -v recovery` produces a kernel `Image` and nothing else. Packaging that
+into a flashable boot image needs an initramfs, which is distro-specific, so it
+happens downstream — in [a50-droidian](https://github.com/sadatdaniel/a50-droidian)
+for Droidian. What this repository owns is the kernel.
 
 ```bash
 docker build -t a50-halium-build ./build
@@ -27,7 +32,7 @@ docker run --rm -v "$PWD:/src" -w /src a50-halium-build ./build/build-kernel.sh
 
 The [`kernel` workflow](.github/workflows/kernel.yml) runs exactly that on a
 clean GitHub runner that has never seen this device. **The badge is the claim.**
-If CI is green, the boot image can be rebuilt from nothing; if CI is red, it
+If CI is green, the kernel can be rebuilt from nothing; if CI is red, it
 cannot, whatever this file says.
 
 ### Bit-for-bit, not just "it builds"

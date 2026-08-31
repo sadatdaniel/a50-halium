@@ -37,7 +37,7 @@ jobs:
       - name: Build the build environment
         run: docker build -t a50-halium-build ./build
 
-      - name: Build kernel and boot image
+      - name: Build the kernel
         run: |
           docker run --rm \
             -v "$PWD:/src" -w /src \
@@ -62,10 +62,9 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: a50-boot-image
+          name: a50-kernel-image
           path: |
             out/Image
-            out/boot.img
             out/sha256sums.txt
             out/build-manifest.txt
           retention-days: 30
@@ -78,6 +77,5 @@ jobs:
         with:
           files: |
             out/Image
-            out/boot.img
             out/sha256sums.txt
             out/build-manifest.txt

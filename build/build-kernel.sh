@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build the A50 kernel and boot image from nothing but this repository.
+# Build the A50 kernel from nothing but this repository.
 #
 # Fetches the upstream kernel and the toolchain at the exact commits pinned in
 # kernel/source.lock, applies this port's patch series, builds, and reports the
@@ -137,21 +137,30 @@ export JOBS
 ./build.sh -d "$BUILD_DEVICE" -v "$BUILD_VARIANT"
 
 # --- collect and check --------------------------------------------------------
+# `build.sh -v recovery` produces out/Image and nothing else. Assembling a
+# bootable image from it needs an initramfs, which is distro-specific and
+# therefore lives downstream (a50-droidian's scripts/build/02-build-boot-image.sh).
+# What this repository is responsible for is the kernel, reproducibly.
 mkdir -p "$OUT_DIR"
-for f in Image boot.img; do
-    [ -e "$SRC/out/$f" ] || { echo "E: build produced no out/$f" >&2; exit 1; }
-    cp "$SRC/out/$f" "$OUT_DIR/$f"
-done
+[ -e "$SRC/out/Image" ] || { echo "E: build produced no out/Image" >&2; exit 1; }
+cp "$SRC/out/Image" "$OUT_DIR/Image"
+# Not a `[ ... ] && cp` one-liner: under `set -e` that exits the script when the
+# file is absent, because the whole list is the command being tested.
+if [ -e "$SRC/System.map" ]; then
+    cp "$SRC/System.map" "$OUT_DIR/System.map"
+fi
 
-BOOT_SIZE="$(stat -c%s "$OUT_DIR/boot.img")"
-echo "I: boot.img is $BOOT_SIZE bytes (partition holds $BOOT_PARTITION_BYTES)"
-if [ "$BOOT_SIZE" -gt "$BOOT_PARTITION_BYTES" ]; then
-    echo "E: boot.img exceeds the boot partition. Flashing it would be silently" >&2
-    echo "E: truncated by dd and the device would not boot." >&2
+# The Image is the bulk of the eventual boot image, so an oversized one is
+# worth catching here rather than after a silent dd truncation on the device.
+IMAGE_SIZE="$(stat -c%s "$OUT_DIR/Image")"
+echo "I: Image is $IMAGE_SIZE bytes (the boot partition holds $BOOT_PARTITION_BYTES in total,"
+echo "I: and the packaged boot image must also fit a ramdisk inside that)"
+if [ "$IMAGE_SIZE" -gt "$BOOT_PARTITION_BYTES" ]; then
+    echo "E: the kernel Image alone exceeds the boot partition; no ramdisk could fit." >&2
     exit 1
 fi
 
-( cd "$OUT_DIR" && sha256sum Image boot.img | tee sha256sums.txt )
+( cd "$OUT_DIR" && sha256sum Image | tee sha256sums.txt )
 
 cat > "$OUT_DIR/build-manifest.txt" <<MANIFEST
 kernel_repo=$KERNEL_REPO
@@ -161,7 +170,7 @@ toolchain_commit=$TOOLCHAIN_COMMIT
 build_device=$BUILD_DEVICE
 build_variant=$BUILD_VARIANT
 patches=$(cd "$REPO_ROOT/kernel/patches" && ls *.patch 2>/dev/null | tr '\n' ' ')
-boot_img_bytes=$BOOT_SIZE
+image_bytes=$IMAGE_SIZE
 built_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 MANIFEST
 
