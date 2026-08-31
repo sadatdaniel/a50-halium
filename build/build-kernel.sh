@@ -79,7 +79,19 @@ if [ ! -d "$SRC/.git" ]; then
     # Fetching one commit by sha keeps this to a single tree instead of the
     # whole history. GitHub allows it; a host that does not will need the
     # branch fetched instead.
-    git -C "$SRC" fetch -q --depth 1 origin "$KERNEL_COMMIT"
+    if ! git -C "$SRC" fetch -q --depth 1 origin "$KERNEL_COMMIT" 2>/dev/null; then
+        # Upstream can disappear, go private, or rewrite history. KERNEL_MIRROR
+        # is our own fork of it and already contains this exact commit, so the
+        # build survives that without the pin changing meaning.
+        KERNEL_MIRROR="$(grep -E '^KERNEL_MIRROR=' "$LOCK" | head -1 | cut -d= -f2- || true)"
+        [ -n "$KERNEL_MIRROR" ] || {
+            echo "E: could not fetch $KERNEL_COMMIT from $KERNEL_REPO, and no KERNEL_MIRROR is set." >&2
+            exit 1
+        }
+        echo "W: upstream fetch failed - falling back to the mirror $KERNEL_MIRROR"
+        git -C "$SRC" remote set-url origin "$KERNEL_MIRROR"
+        git -C "$SRC" fetch -q --depth 1 origin "$KERNEL_COMMIT"
+    fi
     git -C "$SRC" checkout -q FETCH_HEAD
 fi
 

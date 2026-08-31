@@ -10,6 +10,13 @@ KERNEL_REPO=https://github.com/FreshROMs/android_kernel_samsung_exynos9610_mint
 KERNEL_BRANCH=android-14.0
 KERNEL_COMMIT=bec0c2aff1ee8a02ac9f582d60fe611f1d2bc939
 
+# Durability mirror. This is a real GitHub fork of KERNEL_REPO, owned by this
+# project, and it contains KERNEL_COMMIT - verified, not assumed. build-kernel.sh
+# falls back to it if the upstream fetch fails, so the build survives upstream
+# disappearing, going private, or rewriting history. Being a fork it costs
+# nothing to keep and needs no syncing: the pinned commit is already in it.
+KERNEL_MIRROR=https://github.com/sadatdaniel/android_kernel_samsung_exynos9610_mint
+
 # Toolchain: Proton Clang, as shipped by the same people who maintain the
 # kernel tree. build.sh clones this itself and then runs `git pull` on it,
 # which would silently move the build off any pin - so build-kernel.sh clones

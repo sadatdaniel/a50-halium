@@ -56,14 +56,20 @@ cannot happen *silently*.
 ## We do not fork the kernel
 
 The upstream tree — [FreshROMs/android_kernel_samsung_exynos9610_mint](https://github.com/FreshROMs/android_kernel_samsung_exynos9610_mint)
-— is public and maintained, and our entire delta against it is **three small patches,
-about 70 lines**:
+— is public and maintained, and a GitHub **fork** of it already exists at
+[sadatdaniel/android_kernel_samsung_exynos9610_mint](https://github.com/sadatdaniel/android_kernel_samsung_exynos9610_mint),
+which contains the pinned commit and costs nothing to keep. `source.lock` names
+it as `KERNEL_MIRROR` and the build falls back to it if upstream ever fails, so
+durability is covered without hosting a second copy of a 200 MB tree.
+
+Our entire delta against upstream is **four small patches, about 70 lines**:
 
 | Patch | What it does |
 |---|---|
 | `0001-fstab-drop-the-product-first_stage_mount-entries` | This device has no `/product` partition, and Android init treats a missing `first_stage_mount` entry as fatal. |
 | `0002-build.sh-append-the-Kconfig-set-a-Linux-userspace-needs` | Turns off Samsung's integrity/anti-exploit subsystems and turns on what systemd, LXC, `lxc-net` and Phosh need. Every option was added one at a time in response to a real boot failure, and the whole set is boot-tested. |
 | `0003-build.sh-make-the-ramdisk-cpio-deterministic` | Sorts the ramdisk file list and renumbers cpio inodes, so the same source produces the same bytes on any machine. |
+| `0004-build.sh-honour-SOURCE_DATE_EPOCH-for-BUILD_DATE` | Stops a live `date +%s` being compiled into the kernel version string, which made two builds of the same source never match. |
 
 Copying a 200 MB tree to carry 70 lines would add a maintenance burden and make
 it harder, not easier, to follow upstream. A pinned commit plus a patch series
