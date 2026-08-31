@@ -150,6 +150,12 @@ export KBUILD_BUILD_USER KBUILD_BUILD_HOST
 export KBUILD_BUILD_TIMESTAMP="$(date -u -d "@$SOURCE_DATE_EPOCH" '+%a %b %e %H:%M:%S UTC %Y')"
 export GITHUB_RUN_NUMBER=0
 
+# Harmless side effect worth knowing about: upstream build.sh reports its own
+# elapsed time as now minus BUILD_DATE, and patch 0004 pins BUILD_DATE to
+# SOURCE_DATE_EPOCH. So a successful build ends by announcing something like
+# "Kernel build took 6963h:02m:06s" - that is the age of the pin, not a hang.
+# Measured 2026-09-01: 6963h02m is exactly 2025-11-14T20:09Z to the build time.
+
 # The ramdisk is an uncompressed newc cpio built straight from a directory in
 # the source tree, so every file's mtime is baked into it and would otherwise
 # be whenever the checkout happened. Ordering and inode numbering are handled
