@@ -63,6 +63,30 @@ else
     JOBS="$BUILD_JOBS"
 fi
 
+# The pin above does NOT reach the compiler by itself, and this took reading
+# the vendor build.sh to find: its BUILD_KERNEL() declares
+#   local JOBS; JOBS="$(nproc --all)"
+# which shadows this script's exported JOBS unconditionally, for every build,
+# regardless of what --jobs or BUILD_JOBS say. The -j actually passed to make
+# is always nproc --all on whatever machine is running this container.
+#
+# 074aad86... has so far reproduced on GitHub Actions' public-repo runners and
+# on a local 4-vCPU Docker Desktop only because both happen to report 4 cores
+# - the same number as the pin. That is coincidence, not enforcement, so make
+# it loud rather than let a differently-sized machine silently drift the hash
+# and have nothing catch it.
+ACTUAL_NPROC="$(nproc --all)"
+if [ "$ACTUAL_NPROC" != "$BUILD_JOBS" ]; then
+    echo "E: this machine reports nproc --all=$ACTUAL_NPROC, but the kernel tree's" >&2
+    echo "E: own build.sh always builds with -j\$(nproc --all), ignoring the" >&2
+    echo "E: BUILD_JOBS=$BUILD_JOBS pin (it shadows JOBS as a local variable - see the" >&2
+    echo "E: comment above). Building here would use -j$ACTUAL_NPROC, not -j$BUILD_JOBS," >&2
+    echo "E: and per the LTO note above that is not guaranteed to hash-match a" >&2
+    echo "E: pinned build. Constrain this machine/container to $BUILD_JOBS CPUs" >&2
+    echo "E: (e.g. 'docker run --cpus=$BUILD_JOBS ...') and re-run." >&2
+    exit 1
+fi
+
 SRC="$REPO_ROOT/kernel/src"
 TOOLCHAIN="$SRC/toolchain"
 
