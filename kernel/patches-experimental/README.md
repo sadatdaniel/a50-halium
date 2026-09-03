@@ -7,6 +7,41 @@ test on real hardware**, so it is deliberately not in the default build.
 To try one, copy it into `kernel/patches/`, rebuild, and boot-test it. Keep a
 known-good boot image to fall back to before you do.
 
+## `conn-gadget-double-register.patch` — fixes a real, diagnosed kernel bug; **not yet boot-tested**
+
+Unlike the Bluetooth patch below, this one fixes a bug that has been fully
+root-caused on hardware. It is here only because it has not itself been
+through a boot test yet.
+
+`f_conn_gadget.c` registers a **single file-static `struct miscdevice`** and
+`conn_gadget_setup()` calls `misc_register()` on it with no already-registered
+check. Because `misc_register()` starts with `INIT_LIST_HEAD(&misc->list)`, a
+second instantiation of the conn_gadget configfs function points that node at
+itself while its old neighbours still point at it — **`misc_list` becomes
+circular**, and the next `list_for_each_entry()` inside `misc_open()` spins
+forever *holding `misc_mtx`*, at 100 % CPU.
+
+Every misc-device open on the system then hangs — `mali0`, `ion`, `binder`,
+`hwbinder`, `uinput`, the compositor, every Android HAL. It presents as "the
+GPU is hung", which is why it cost two sessions to find. Measured: 94 tasks at
+`misc_open+0x34`, load average 115.
+
+Reached because `usb_moded` (GNU/Linux side) and Android's `vendor_init`
+(container side) both drive USB gadget configfs. `f_mass_storage` survives the
+same race by failing loudly with `-EEXIST`; the Samsung functions corrupt the
+list silently instead.
+
+Full diagnosis, including why the spinning holder is invisible to D-state
+sweeps, `wchan` grouping, SysRq-T and fd inspection: a50-ubuntu-touch
+`docs/experiments/006-what-we-missed.md`.
+
+**Status:** applies cleanly to the pinned tree (`git apply --check`). Ubuntu
+Touch currently ships a userspace workaround instead — it keeps the container
+away from USB gadget configfs entirely
+(a50-ubuntu-touch `scripts/apply-device-workarounds.sh`). That workaround is a
+stopgap; this patch is the real fix, and promoting it to `kernel/patches/`
+after a boot test should let the workaround be deleted.
+
 ## `bluetooth-linux-stack.patch` — enables `CONFIG_BT`; **bootloops the device**
 
 Appends the Linux Bluetooth stack to the Kconfig set: `CONFIG_BT`,

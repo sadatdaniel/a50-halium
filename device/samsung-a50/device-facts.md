@@ -70,6 +70,28 @@ none of them is guessable from documentation.
 * Leave `CONFIG_SCSC_BT_BLUEZ` unset, so the Samsung driver does not register
   its own hci device and race the Android HAL for the same chip.
 
+## USB gadget
+
+* **`f_conn_gadget.c` corrupts `misc_list` if its configfs function is
+  instantiated twice.** It registers a single file-static `struct miscdevice`
+  and `conn_gadget_setup()` calls `misc_register()` with no already-registered
+  check. `misc_register()` opens with `INIT_LIST_HEAD(&misc->list)`, so the
+  second registration points that node at itself while its old neighbours still
+  point at it — the list becomes circular and the next `list_for_each_entry()`
+  inside `misc_open()` **spins forever holding the global `misc_mtx`**.
+* The blast radius is the whole system, not USB: every later open of
+  `/dev/mali0`, `/dev/ion`, `/dev/binder`, `/dev/hwbinder`, `/dev/uinput`, the
+  compositor and every Android HAL blocks. It looks exactly like a hung GPU.
+* Triggered when two things drive USB gadget configfs at once. Under Ubuntu
+  Touch that is `usb_moded` plus the container's `vendor_init`. **Droidian is
+  equally exposed** — it simply has not hit the timing yet, so treat this as a
+  device fact, not a UT quirk.
+* `f_mass_storage` hits the same double-instantiation and survives it, failing
+  loudly with `kobject_add_internal ... -EEXIST`. The Samsung functions have no
+  such check. A `-EEXIST` WARN for `f_mass_storage` in dmesg is therefore a
+  useful early signal that the race is happening.
+* Fix: `kernel/patches-experimental/conn-gadget-double-register.patch`.
+
 ## Input
 
 * Touchscreen `sec_touchscreen` on `event4` works. Volume keys work.

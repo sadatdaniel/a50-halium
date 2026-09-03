@@ -1,0 +1,76 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: sadatdaniel <sadatdaniel@yahoo.com>
+Date: Thu, 4 Sep 2026 00:20:00 +0000
+Subject: [PATCH] f_conn_gadget: guard against double misc_register
+
+conn_gadget_device is a single file-static struct miscdevice, and
+conn_gadget_setup() calls misc_register() on it unconditionally, with no
+check for an existing registration. It also overwrites the global
+_conn_gadget_dev before doing so, which orphans the previous object's kref
+and means conn_gadget_cleanup() - the only caller of misc_deregister() -
+can never run for it.
+
+Instantiate the conn_gadget configfs function a second time and the result
+is memory corruption, not an error:
+
+  misc_register() begins with INIT_LIST_HEAD(&misc->list), so the static
+  node is reset to point at itself while the neighbours already linked to
+  it in misc_list still point at it. misc_list becomes circular. The next
+  list_for_each_entry(c, &misc_list, list) inside misc_open() never
+  terminates - and it runs inside that function's misc_mtx critical
+  section, so the spinning task holds the global misc mutex forever, at
+  100% CPU, in uninterruptible kernel context.
+
+Every subsequent open() of any misc device on the system then blocks:
+/dev/mali0, /dev/ion, /dev/binder, /dev/hwbinder, /dev/uinput, the
+compositor and every Android HAL. Observed on this device as 94 tasks
+parked at misc_open+0x34 with load average 115, and it presents as "the
+GPU is hung" rather than as anything USB-related.
+
+It is reached in practice because usb_moded (the GNU/Linux side) and
+Android's vendor_init (inside the container) both drive USB gadget
+configfs. f_mass_storage survives the same race because device_create()
+fails it loudly with -EEXIST; the Samsung gadget functions have no such
+check and corrupt the list silently instead.
+
+Diagnosis in a50-ubuntu-touch docs/experiments/006-what-we-missed.md,
+including why the spinning holder is invisible to D-state sweeps, wchan
+grouping, SysRq-T and fd inspection alike.
+
+kref_get_unless_zero() rather than kref_get() so a concurrent teardown
+that has already dropped the count to zero falls through to a full setup
+instead of resurrecting a dying object; it is the idiom this file already
+uses in conn_gadget_open().
+
+Verified to apply cleanly against the pinned tree with `git apply --check`.
+NOT YET BOOT-TESTED - see README.md in this directory. The workaround
+deployed instead keeps the container away from USB gadget configfs
+entirely (a50-ubuntu-touch scripts/apply-device-workarounds.sh).
+---
+diff --git a/drivers/usb/gadget/function/f_conn_gadget.c b/drivers/usb/gadget/function/f_conn_gadget.c
+index ed3db0865..e98af7f3c 100644
+--- a/drivers/usb/gadget/function/f_conn_gadget.c
++++ b/drivers/usb/gadget/function/f_conn_gadget.c
+@@ -1227,6 +1227,19 @@ static int conn_gadget_setup(struct conn_gadget_instance *fi_conn_gadget)
+ 
+ 	printk(KERN_INFO "conn_gadget_setup\n");
+ 
++	/*
++	 * conn_gadget_device is a single static miscdevice. Registering it
++	 * twice makes misc_list circular (misc_register() starts with
++	 * INIT_LIST_HEAD on a node still linked into that list), which hangs
++	 * every misc-device open on the system inside misc_open(), holding
++	 * misc_mtx forever. Reuse the existing instance instead.
++	 */
++	if (_conn_gadget_dev &&
++	    kref_get_unless_zero(&_conn_gadget_dev->kref)) {
++		printk(KERN_INFO "conn_gadget_setup: already registered\n");
++		return 0;
++	}
++
+ 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
+ 	if (!dev) {
+ 		printk(KERN_ERR "alloc conn_gadget_dev F\n");
+--
+2.43.0
+
