@@ -42,6 +42,43 @@ away from USB gadget configfs entirely
 stopgap; this patch is the real fix, and promoting it to `kernel/patches/`
 after a boot test should let the workaround be deleted.
 
+## `abox-runtime-pm-get-sync.patch` — **DISPROVED, do not use**
+
+Its premise is wrong. It claims `pm_runtime_get()` never invokes the resume
+callback, so `abox_enable()` never runs. The boot log says otherwise:
+
+```
+[    1.424961] samsung-abox 14a50000.abox: abox_enable
+[    1.425029] samsung-abox 14a50000.abox: abox_download_firmware
+[    1.425075] Direct firmware load for calliope_sram.bin failed with error -2
+[    2.194323] samsung-abox 14a50000.abox: Failed to request firmware
+```
+
+`abox_enable()` runs fine at 1.42 s. The DSP never starts because the firmware
+is requested before any filesystem exists on this device — the kernel rejects
+the boot image's ramdisk as an initramfs ("junk in compressed archive") and
+Samsung's SAR_RD loader only brings it up at 2.08 s — and
+`abox_complete_sram_firmware_request()` returns early on `!fw` and never
+retries. `pm_runtime_get_sync()` would change only the timing, not the outcome.
+
+The actual fix is `CONFIG_EXTRA_FIRMWARE`, which links the blobs into the
+kernel image so `fw_get_builtin_firmware()` resolves them with no filesystem at
+all. **Audio now works on the device with that.** Full evidence:
+a50-ubuntu-touch `docs/experiments/007-abox-firmware-too-early.md`.
+
+Kept here only as the record of a disproved hypothesis.
+
+## `abox-fixup-helper-dai-guard.patch` — fixes a real NULL deref; built and booted
+
+`abox_hw_params_fixup_helper()` hands `w->priv` to
+`abox_if_hw_params_fixup_by_dai()` for every widget carrying a stream name, but
+`w->priv` is a `snd_soc_dai` only for DAI widgets, so it dereferences a non-DAI
+pointer at `dai->dev` (offset 0x10, the observed fault address) and panics.
+Guarded the way ASoC's own `snd_soc_dapm_connect_dai_link_widgets()` guards the
+identical lookup. The same unguarded code is present verbatim in other Samsung
+Exynos ABOX trees, so this is long-standing upstream rather than a local
+regression.
+
 ## `bluetooth-linux-stack.patch` — enables `CONFIG_BT`; **bootloops the device**
 
 Appends the Linux Bluetooth stack to the Kconfig set: `CONFIG_BT`,
