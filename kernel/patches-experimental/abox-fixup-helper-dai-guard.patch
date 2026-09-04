@@ -1,0 +1,125 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: sadatdaniel <sadatdaniel@yahoo.com>
+Date: Fri, 5 Sep 2026 00:20:00 +0000
+Subject: [PATCH] ASoC: samsung: abox: do not treat every stream widget as a DAI
+
+Kernel panic, reproducible, as soon as a playback route to the speaker
+amplifier is enabled and a stream is started:
+
+  speaker-test: Unable to handle kernel NULL pointer dereference at
+                virtual address 00000010
+  pc : abox_hw_params_fixup_helper+0x830/0x1150
+  lr : abox_hw_params_fixup_helper+0x804/0x1150
+  Kernel panic - not syncing: Fatal exception
+
+0x10 is offsetof(struct snd_soc_dai, dev) - name, id, dev - and
+abox_if_hw_params_fixup_by_dai() opens with `struct device *dev =
+dai->dev`.
+
+The fallback branch of abox_hw_params_fixup_helper() walks a DAPM widget
+list looking for the interface that should dictate the stream format:
+
+	list_for_each_entry(w, &widget_list, work_list) {
+		struct snd_soc_dai *dai;
+
+		if (!w->sname)
+			continue;
+
+		dai = w->priv;
+		if (abox_if_hw_params_fixup_by_dai(dai, params, stream) >= 0) {
+
+but w->priv only holds a snd_soc_dai for DAI widgets - soc-dapm.c assigns
+it in snd_soc_dapm_new_dai_widgets() and nowhere else. w->sname is set on
+far more than that, AIF widgets included, so the loop hands
+abox_if_hw_params_fixup_by_dai() a pointer that is not a DAI and it
+dereferences it.
+
+Guard it exactly the way ASoC's own snd_soc_dapm_connect_dai_link_widgets()
+guards the identical lookup: filter on w->id being snd_soc_dapm_dai_in or
+snd_soc_dapm_dai_out, then check w->priv is set at all. Also make
+abox_if_hw_params_fixup_by_dai() reject a NULL dai rather than trust its
+callers - it is already written to be called speculatively and to reject
+DAIs that are not its own (`dev->driver != &samsung_abox_if_driver.driver`
+-> -EINVAL), so a NULL dai returning -EINVAL fits that contract.
+
+Why stock Android never hits this: the branch above is only reached when
+the first attempt, abox_if_hw_params_fixup(rtd, params, stream) on
+rtd->cpu_dai, fails. In Samsung's own configuration it succeeds, so the
+fallback is dead code there. It is reached here because the route in use
+puts the interface somewhere other than the runtime's own cpu_dai.
+
+Not a local regression: the same unguarded loop and the same unguarded
+abox_if_hw_params_fixup_by_dai() are present verbatim in other Samsung
+Exynos ABOX trees (checked against the Galaxy Note9 exynos9810 Pie tree,
+freeza-inc/bm-galaxy-note9-exynos-pie), so this is long-standing in
+Samsung's driver rather than something this port introduced.
+
+Found on a Galaxy A50 (exynos9610) running Ubuntu Touch, with the ABOX
+DSP booting for the first time - see a50-ubuntu-touch
+docs/experiments/007-abox-firmware-too-early.md. The panic is only
+reachable once the DSP actually runs, which is why it had never been seen
+on this device before.
+---
+diff --git a/sound/soc/samsung/abox/abox.c b/sound/soc/samsung/abox/abox.c
+index 0d900fb0b..62e4b00d8 100644
+--- a/sound/soc/samsung/abox/abox.c
++++ b/sound/soc/samsung/abox/abox.c
+@@ -3288,10 +3288,31 @@ skip_capture:
+ 		list_for_each_entry(w, &widget_list, work_list) {
+ 			struct snd_soc_dai *dai;
+ 
++			/*
++			 * w->priv only holds a snd_soc_dai for DAI widgets -
++			 * soc-dapm.c sets it in snd_soc_dapm_new_dai_widgets()
++			 * and nowhere else. Every widget with a stream name
++			 * reaches this loop though, AIF widgets included, and
++			 * for those w->priv is not a DAI at all. Guard it the
++			 * way ASoC's own snd_soc_dapm_connect_dai_link_widgets()
++			 * does, or abox_if_hw_params_fixup_by_dai() dereferences
++			 * a non-DAI pointer at dai->dev.
++			 */
++			switch (w->id) {
++			case snd_soc_dapm_dai_in:
++			case snd_soc_dapm_dai_out:
++				break;
++			default:
++				continue;
++			}
++
+ 			if (!w->sname)
+ 				continue;
+ 
+ 			dai = w->priv;
++			if (!dai)
++				continue;
++
+ 			if (abox_if_hw_params_fixup_by_dai(dai, params, stream)
+ 					>= 0) {
+ 				abox_set_sif_auto_config(data, msg_rate, true);
+diff --git a/sound/soc/samsung/abox/abox_if.c b/sound/soc/samsung/abox/abox_if.c
+index 3a58f7f3a..3cd4e40be 100644
+--- a/sound/soc/samsung/abox/abox_if.c
++++ b/sound/soc/samsung/abox/abox_if.c
+@@ -911,11 +911,18 @@ module_platform_driver(samsung_abox_if_driver);
+ int abox_if_hw_params_fixup_by_dai(struct snd_soc_dai *dai,
+ 		struct snd_pcm_hw_params *params, int stream)
+ {
+-	struct device *dev = dai->dev;
+-	struct abox_if_data *data = dev_get_drvdata(dev);
++	struct device *dev;
++	struct abox_if_data *data;
+ 	unsigned int rate, channels, width;
+ 	int ret = 0;
+ 
++	/* callers walk DAPM widget lists; not every widget carries a DAI */
++	if (!dai)
++		return -EINVAL;
++
++	dev = dai->dev;
++	data = dev_get_drvdata(dev);
++
+ 	if (dev->driver != &samsung_abox_if_driver.driver)
+ 		return -EINVAL;
+ 
+-- 
+2.43.0
