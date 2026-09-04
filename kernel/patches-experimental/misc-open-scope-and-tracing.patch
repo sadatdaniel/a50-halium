@@ -1,0 +1,105 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: sadatdaniel <sadatdaniel@yahoo.com>
+Date: Wed, 3 Sep 2026 04:54:00 +0000
+Subject: [PATCH] misc: call the driver open outside misc_mtx, plus MISCDBG tracing
+
+This is the kernel that is running on the device (uname #4). Two changes
+in one patch, kept together because the tracing is what proved the fix
+was needed and is what identified the holder.
+
+1. Scope fix. Stock misc_open() - mainline 4.14 and current master alike,
+   this is NOT a Samsung deviation - holds the global misc_mtx across the
+   driver's own f_op->open(). One driver whose open blocks forever
+   therefore freezes every misc-device open on the system: mali0, ion,
+   binder, hwbinder, uinput, the compositor and every Android HAL. It
+   presents as a hung GPU. Here the original blocker was the Samsung
+   umts_boot0 modem-boot device, opened by the vendor cass daemon before
+   the CP is booted. The lookup stays under the mutex; the driver open
+   runs without it.
+
+2. MISCDBG tracing. printks around the lock, the drop, the driver-open
+   call and its return. Without them the holder is invisible: it spins
+   R-state, so it never matches a wchan or D-state sweep, its
+   /proc/PID/stack is unreadable while running, and a task blocked inside
+   ->open() has no fd for the device yet. Two sessions failed to find it
+   by inference; these printks named it in one boot.
+
+The 2015 LKML patch proposing the same scope change upstream was never
+merged, so this is a deliberate local deviation rather than a backport.
+
+Boot-tested: this is the kernel the device runs. Kept in
+patches-experimental only because the tracing is too noisy for a release
+build - split the printks out before promoting the scope fix.
+---
+diff --git a/drivers/char/misc.c b/drivers/char/misc.c
+index ee104af50..6b14333d0 100644
+--- a/drivers/char/misc.c
++++ b/drivers/char/misc.c
+@@ -117,26 +117,46 @@ static int misc_open(struct inode *inode, struct file *file)
+ 	int err = -ENODEV;
+ 	const struct file_operations *new_fops = NULL;
+ 
++	/*
++	 * a50: call the driver's open() OUTSIDE the global misc_mtx. Stock
++	 * behaviour (mainline 4.14 and later alike) holds the mutex across
++	 * f_op->open, so a driver whose open blocks forever - here: the
++	 * Samsung umts_boot0 modem-boot device, opened by the vendor cass
++	 * daemon before the CP is booted - freezes every misc open on the
++	 * system (mali0, ion, binder, ...), taking the whole display stack
++	 * with it (observed 2026-09-02/03). Lookup stays under the mutex;
++	 * the driver open runs without it.
++	 */
+ 	mutex_lock(&misc_mtx);
+-
++	printk(KERN_ERR "MISCDBG: pid=%d comm=%s GOTLOCK minor=%d\n",
++	       current->pid, current->comm, minor);
+ 	list_for_each_entry(c, &misc_list, list) {
+ 		if (c->minor == minor) {
+ 			new_fops = fops_get(c->fops);
+ 			break;
+ 		}
+ 	}
++	mutex_unlock(&misc_mtx);
++	printk(KERN_ERR "MISCDBG: pid=%d comm=%s DROPPED minor=%d\n",
++	       current->pid, current->comm, minor);
+ 
+ 	if (!new_fops) {
+-		mutex_unlock(&misc_mtx);
++		printk(KERN_ERR "MISCDBG: pid=%d comm=%s REQMOD minor=%d\n",
++		       current->pid, current->comm, minor);
+ 		request_module("char-major-%d-%d", MISC_MAJOR, minor);
+-		mutex_lock(&misc_mtx);
++		printk(KERN_ERR "MISCDBG: pid=%d comm=%s REQMOD-DONE minor=%d\n",
++		       current->pid, current->comm, minor);
+ 
++		mutex_lock(&misc_mtx);
++		printk(KERN_ERR "MISCDBG: pid=%d comm=%s GOTLOCK2 minor=%d\n",
++		       current->pid, current->comm, minor);
+ 		list_for_each_entry(c, &misc_list, list) {
+ 			if (c->minor == minor) {
+ 				new_fops = fops_get(c->fops);
+ 				break;
+ 			}
+ 		}
++		mutex_unlock(&misc_mtx);
+ 		if (!new_fops)
+ 			goto fail;
+ 	}
+@@ -150,10 +170,13 @@ static int misc_open(struct inode *inode, struct file *file)
+ 
+ 	err = 0;
+ 	replace_fops(file, new_fops);
++	printk(KERN_ERR "MISCDBG: pid=%d comm=%s CALLING-DRIVER-OPEN minor=%d\n",
++	       current->pid, current->comm, minor);
+ 	if (file->f_op->open)
+ 		err = file->f_op->open(inode, file);
++	printk(KERN_ERR "MISCDBG: pid=%d comm=%s DRIVER-OPEN-RETURNED minor=%d err=%d\n",
++	       current->pid, current->comm, minor, err);
+ fail:
+-	mutex_unlock(&misc_mtx);
+ 	return err;
+ }
+ 
+--
+2.43.0
+
