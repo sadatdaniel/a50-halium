@@ -1,0 +1,68 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: sadatdaniel <sadatdaniel@yahoo.com>
+Date: Thu, 4 Sep 2026 14:30:00 +0000
+Subject: [PATCH] ASoC: samsung: abox: resume synchronously so the DSP boots
+
+No audio on this device: every PCM write fails with -EIO and the driver
+logs "Invalid calliope state: 0" (CALLIOPE_DISABLED) forever.
+
+samsung_abox_probe() does:
+
+	pm_runtime_enable(dev);
+	pm_runtime_set_autosuspend_delay(dev, 1);
+	pm_runtime_use_autosuspend(dev);
+	pm_runtime_get(dev);
+
+pm_runtime_get() is asynchronous - it increments the usage count and
+never invokes the resume callback. abox_runtime_resume() -> abox_enable()
+is the only path that downloads calliope_sram.bin / calliope_dram.bin and
+releases the audio DSP from reset, so the DSP is never started. Worse,
+the usage count is then pinned, so the device can never idle and resume
+later either: runtime_status stays "active" for the lifetime of the boot
+while the DSP is still in reset.
+
+Observed on a Galaxy A50 (exynos9610) running Ubuntu Touch:
+
+  * runtime_status = active from boot, autosuspend_delay_ms = 1, but the
+    device never suspends and abox_enable() never appears in dmesg;
+  * no "abox_download_firmware" and no "SRAM firmware loaded" either;
+  * speaker-test straight to hw:0,0, with PulseAudio stopped, fails with
+    "Write error: -5,Input/output error";
+  * the Android audio HAL is driven correctly through the whole userspace
+    stack (logcat shows real adev_open_output_stream/out_write calls), so
+    the fault is squarely below it.
+
+Ruled out first: firmware presence (calliope_*.bin are installed and the
+"Failed to request firmware" error is gone), the CP/cass daemon, ALSA
+node permissions, and the calliope_cmd FAILSAFE path.
+
+Use pm_runtime_get_sync() so the resume callback actually runs at probe.
+
+NOT YET BOOT-TESTED - see README.md in this directory.
+---
+diff --git a/sound/soc/samsung/abox/abox.c b/sound/soc/samsung/abox/abox.c
+index 0d900fb0b..3ed9c5a49 100644
+--- a/sound/soc/samsung/abox/abox.c
++++ b/sound/soc/samsung/abox/abox.c
+@@ -6304,7 +6304,17 @@ static int samsung_abox_probe(struct platform_device *pdev)
+ 	pm_runtime_enable(dev);
+ 	pm_runtime_set_autosuspend_delay(dev, 1);
+ 	pm_runtime_use_autosuspend(dev);
+-	pm_runtime_get(dev);
++	/*
++	 * pm_runtime_get() only increments the usage count; it never invokes
++	 * the resume callback. abox_runtime_resume() -> abox_enable() is the
++	 * only path that downloads the calliope firmware and releases the
++	 * audio DSP from reset, so with a plain get() the DSP is never
++	 * started - and because the usage count stays pinned the device can
++	 * never idle and resume later either. The result is calliope_state
++	 * stuck at CALLIOPE_DISABLED ("Invalid calliope state: 0") and every
++	 * PCM write failing with -EIO. Resume synchronously instead.
++	 */
++	pm_runtime_get_sync(dev);
+ 
+ 	data->qos_nb.notifier_call = abox_qos_notifier;
+ 	pm_qos_add_notifier(PM_QOS_AUD_THROUGHPUT, &data->qos_nb);
+--
+2.43.0
+
