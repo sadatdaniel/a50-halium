@@ -1,0 +1,262 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: sadatdaniel <sadatdaniel@yahoo.com>
+Date: Fri, 5 Sep 2026 09:45:00 +0000
+Subject: [PATCH] Bluetooth: restore the HCI socket layer this tree comments out
+
+This vendor tree has roughly a third of net/bluetooth/hci_sock.c wrapped in
+/* ... */ - the entire HCI socket and monitor layer - with each gutted
+function left returning 0:
+
+    hci_sock_create, hci_sock_release, hci_sock_bind, hci_sock_getname,
+    hci_sock_ioctl, hci_sock_bound_ioctl, hci_sock_blacklist_add/_del,
+    hci_sock_gen_cookie/_free_cookie, create_monitor_ctrl_open/_close,
+    hci_send_monitor_ctrl_event, send_monitor_replay,
+    send_monitor_control_replay
+
+plus "// static DEFINE_IDA(sock_cookie_ida);".
+
+Android drives Bluetooth entirely through the HAL and never opens an
+AF_BLUETOOTH socket, so stock firmware never notices. A GNU/Linux userspace
+does: BlueZ opens HCI sockets, and bluebinder proxies HCI from the Android
+HAL into the Linux stack through /dev/vhci.
+
+The result is not a graceful failure. hci_sock_create() returns 0 without
+ever calling sk_alloc()/sock_init_data(), so sock->sk stays NULL, and
+bt_sock_create() then does
+
+	if (!err)
+		bt_sock_reclassify_lock(sock->sk, proto);
+
+whose first statement is BUG_ON(!sk). Every AF_BLUETOOTH socket is a
+guaranteed kernel panic. Observed on a Galaxy A50 running Ubuntu Touch:
+
+	kernel BUG at net/bluetooth/af_bluetooth.c:71!
+	Internal error: Oops - BUG: 0 [#1] PREEMPT SMP
+	pc : bt_sock_create+0x190/0x1a0
+	lr : bt_sock_create+0xd8/0x1a0
+	Kernel panic - not syncing: Fatal exception
+
+This is what made this device "bootloop when CONFIG_BT is enabled" on
+2026-08-31, and it was misattributed to an Android-init fatal error at the
+time. It is neither Android init nor the kernel failing to boot: with
+CONFIG_BT built in and bluebinder masked the device boots and runs fine.
+bluebinder simply starts on every boot, opens an HCI socket, and panics the
+kernel.
+
+Restoring the blocks is mechanical - only the comment delimiters are
+removed. The stub `return 0;` after each is left alone: for create and
+release it is the correct ending, and for ioctl/bind/getname it becomes
+unreachable after the restored `return err;`.
+
+After this, hciconfig runs without panicking and bluebinder gets as far as
+"Connected to HIDL bluetooth service".
+---
+diff --git a/net/bluetooth/hci_sock.c b/net/bluetooth/hci_sock.c
+index fc32f5bc0..c50b09b72 100644
+--- a/net/bluetooth/hci_sock.c
++++ b/net/bluetooth/hci_sock.c
+@@ -39,7 +39,7 @@
+ static LIST_HEAD(mgmt_chan_list);
+ static DEFINE_MUTEX(mgmt_chan_list_lock);
+ 
+-// static DEFINE_IDA(sock_cookie_ida);
++static DEFINE_IDA(sock_cookie_ida);
+ 
+ static atomic_t monitor_promisc = ATOMIC_INIT(0);
+ 
+@@ -83,7 +83,6 @@ u32 hci_sock_get_cookie(struct sock *sk)
+ {
+ 	return hci_pi(sk)->cookie;
+ }
+-/*
+ static bool hci_sock_gen_cookie(struct sock *sk)
+ {
+ 	int id = hci_pi(sk)->cookie;
+@@ -110,7 +109,6 @@ static void hci_sock_free_cookie(struct sock *sk)
+ 		ida_simple_remove(&sock_cookie_ida, id);
+ 	}
+ }
+-*/
+ static inline int hci_test_bit(int nr, const void *addr)
+ {
+ 	return *((const __u32 *) addr + (nr >> 5)) & ((__u32) 1 << (nr & 31));
+@@ -474,7 +472,6 @@ static struct sk_buff *create_monitor_event(struct hci_dev *hdev, int event)
+ 
+ 	return skb;
+ }
+-/*
+ static struct sk_buff *create_monitor_ctrl_open(struct sock *sk)
+ {
+ 	struct hci_mon_hdr *hdr;
+@@ -570,7 +567,6 @@ static struct sk_buff *create_monitor_ctrl_close(struct sock *sk)
+ 
+ 	return skb;
+ }
+-*/
+ static struct sk_buff *create_monitor_ctrl_command(struct sock *sk, u16 index,
+ 						   u16 opcode, u16 len,
+ 						   const void *buf)
+@@ -597,7 +593,6 @@ static struct sk_buff *create_monitor_ctrl_command(struct sock *sk, u16 index,
+ 
+ 	return skb;
+ }
+-/*
+ static void __printf(2, 3)
+ send_monitor_note(struct sock *sk, const char *fmt, ...)
+ {
+@@ -691,7 +686,6 @@ static void send_monitor_control_replay(struct sock *mon_sk)
+ 
+ 	read_unlock(&hci_sk_list.lock);
+ }
+-*/
+ /* Generate internal stack event */
+ static void hci_si_event(struct hci_dev *hdev, int type, int dlen, void *data)
+ {
+@@ -817,7 +811,6 @@ EXPORT_SYMBOL(hci_mgmt_chan_unregister);
+ 
+ static int hci_sock_release(struct socket *sock)
+ {
+-    /*
+ 	struct sock *sk = sock->sk;
+ 	struct hci_dev *hdev;
+ 	struct sk_buff *skb;
+@@ -878,10 +871,8 @@ static int hci_sock_release(struct socket *sock)
+ 
+ 	release_sock(sk);
+ 	sock_put(sk);
+-    */
+ 	return 0;
+ }
+-/*
+ static int hci_sock_blacklist_add(struct hci_dev *hdev, void __user *arg)
+ {
+ 	bdaddr_t bdaddr;
+@@ -959,11 +950,9 @@ static int hci_sock_bound_ioctl(struct sock *sk, unsigned int cmd,
+ 
+ 	return -ENOIOCTLCMD;
+ }
+-*/
+ static int hci_sock_ioctl(struct socket *sock, unsigned int cmd,
+ 			  unsigned long arg)
+ {
+-    /*
+ 	void __user *argp = (void __user *)arg;
+ 	struct sock *sk = sock->sk;
+ 	int err;
+@@ -1053,14 +1042,12 @@ static int hci_sock_ioctl(struct socket *sock, unsigned int cmd,
+ done:
+ 	release_sock(sk);
+ 	return err;
+-    */
+ 	return 0;
+ }
+ 
+ static int hci_sock_bind(struct socket *sock, struct sockaddr *addr,
+ 			 int addr_len)
+ {
+-    /*
+ 	struct sockaddr_hci haddr;
+ 	struct sock *sk = sock->sk;
+ 	struct hci_dev *hdev = NULL;
+@@ -1340,14 +1327,12 @@ static int hci_sock_bind(struct socket *sock, struct sockaddr *addr,
+ done:
+ 	release_sock(sk);
+ 	return err;
+-    */
+     return 0;
+ }
+ 
+ static int hci_sock_getname(struct socket *sock, struct sockaddr *addr,
+ 			    int *addr_len, int peer)
+ {
+-    /*
+ 	struct sockaddr_hci *haddr = (struct sockaddr_hci *)addr;
+ 	struct sock *sk = sock->sk;
+ 	struct hci_dev *hdev;
+@@ -1374,7 +1359,6 @@ static int hci_sock_getname(struct socket *sock, struct sockaddr *addr,
+ done:
+ 	release_sock(sk);
+ 	return err;
+-    */
+     return 0;
+ }
+ 
+@@ -2003,7 +1987,6 @@ static struct proto hci_sk_proto = {
+ static int hci_sock_create(struct net *net, struct socket *sock, int protocol,
+ 			   int kern)
+ {
+-    /*
+ 	struct sock *sk;
+ 
+ 	BT_DBG("sock %p", sock);
+@@ -2027,7 +2010,6 @@ static int hci_sock_create(struct net *net, struct socket *sock, int protocol,
+ 	sk->sk_state = BT_OPEN;
+ 
+ 	bt_sock_link(&hci_sk_list, sk);
+-    */
+ 	return 0;
+ }
+ 
+diff --git a/sound/soc/samsung/abox/abox.c b/sound/soc/samsung/abox/abox.c
+index 0d900fb0b..62e4b00d8 100644
+--- a/sound/soc/samsung/abox/abox.c
++++ b/sound/soc/samsung/abox/abox.c
+@@ -3288,10 +3288,31 @@ skip_capture:
+ 		list_for_each_entry(w, &widget_list, work_list) {
+ 			struct snd_soc_dai *dai;
+ 
++			/*
++			 * w->priv only holds a snd_soc_dai for DAI widgets -
++			 * soc-dapm.c sets it in snd_soc_dapm_new_dai_widgets()
++			 * and nowhere else. Every widget with a stream name
++			 * reaches this loop though, AIF widgets included, and
++			 * for those w->priv is not a DAI at all. Guard it the
++			 * way ASoC's own snd_soc_dapm_connect_dai_link_widgets()
++			 * does, or abox_if_hw_params_fixup_by_dai() dereferences
++			 * a non-DAI pointer at dai->dev.
++			 */
++			switch (w->id) {
++			case snd_soc_dapm_dai_in:
++			case snd_soc_dapm_dai_out:
++				break;
++			default:
++				continue;
++			}
++
+ 			if (!w->sname)
+ 				continue;
+ 
+ 			dai = w->priv;
++			if (!dai)
++				continue;
++
+ 			if (abox_if_hw_params_fixup_by_dai(dai, params, stream)
+ 					>= 0) {
+ 				abox_set_sif_auto_config(data, msg_rate, true);
+diff --git a/sound/soc/samsung/abox/abox_if.c b/sound/soc/samsung/abox/abox_if.c
+index 3a58f7f3a..3cd4e40be 100644
+--- a/sound/soc/samsung/abox/abox_if.c
++++ b/sound/soc/samsung/abox/abox_if.c
+@@ -911,11 +911,18 @@ module_platform_driver(samsung_abox_if_driver);
+ int abox_if_hw_params_fixup_by_dai(struct snd_soc_dai *dai,
+ 		struct snd_pcm_hw_params *params, int stream)
+ {
+-	struct device *dev = dai->dev;
+-	struct abox_if_data *data = dev_get_drvdata(dev);
++	struct device *dev;
++	struct abox_if_data *data;
+ 	unsigned int rate, channels, width;
+ 	int ret = 0;
+ 
++	/* callers walk DAPM widget lists; not every widget carries a DAI */
++	if (!dai)
++		return -EINVAL;
++
++	dev = dai->dev;
++	data = dev_get_drvdata(dev);
++
+ 	if (dev->driver != &samsung_abox_if_driver.driver)
+ 		return -EINVAL;
+ 
+-- 
+2.43.0
