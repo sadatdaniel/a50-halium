@@ -9,3 +9,4 @@ Image
 # Working checkouts created by build/build-kernel.sh
 kernel/src/
 kernel/toolchain/
+out-fp/

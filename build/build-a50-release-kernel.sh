@@ -68,7 +68,7 @@ for f in $FIRMWARE; do
 done
 
 EXTRA="misc-open-scope-and-tracing abox-fixup-helper-dai-guard \
-bluetooth-linux-stack bluetooth-hci-sock-restore"
+bluetooth-linux-stack bluetooth-hci-sock-restore decon-force-mask-layer"
 
 # build-kernel.sh applies kernel/patches/*.patch, so stage the experimental
 # ones there. Numbered after 0004 to keep the series order deterministic.
@@ -108,6 +108,20 @@ echo "I: kernel source at $(git -C "$SRC" rev-parse HEAD)"
 mkdir -p "$SRC/firmware"
 for f in $FIRMWARE; do cp "$FW_DIR/$f" "$SRC/firmware/"; done
 echo "I: installed $(echo $FIRMWARE | wc -w) firmware blobs into kernel/src/firmware/"
+
+# The Kconfig anchor below is created by kernel/patches/0002, so the series has
+# to be applied before we look for it. build-kernel.sh normally does this, but
+# it runs after this point - on a freshly cloned tree the anchor would not exist
+# yet and the assert would fire. Apply here and drop the same sentinel, so
+# build-kernel.sh skips its own apply and the result is identical either way.
+if [ ! -e "$SRC/.a50-patched" ]; then
+    for p in "$REPO_ROOT"/kernel/patches/*.patch; do
+        [ -e "$p" ] || continue
+        echo "I: applying $(basename "$p")"
+        git -C "$SRC" apply --whitespace=nowarn "$p"
+    done
+    touch "$SRC/.a50-patched"
+fi
 
 # Append our Kconfig to the same generated set kernel/patches/0002 writes.
 python3 - "$SRC/build.sh" "$FIRMWARE" <<'PY'

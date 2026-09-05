@@ -1,0 +1,79 @@
+From 7b03948695460f318a71d683f8290b75b07a7864 Mon Sep 17 00:00:00 2001
+From: sadatdaniel <sadatdaniel@yahoo.com>
+Date: Sat, 5 Sep 2026 16:14:19 +0000
+Subject: [PATCH] decon: let userspace force the fingerprint HBM mask layer
+
+The A50's fingerprint sensor is an optical under-display EGISTEC ET713. It can
+only image a finger while the panel lights the sensor area (high brightness
+mode). On this panel that is Samsung's "mask layer":
+
+  panels/ea8076_a50_lcd_ctrl.c
+      if (decon && decon->current_mask_layer)
+              lcd->brightness = lcd->mask_brightness;
+
+and decon only sets current_mask_layer when the compositor submits a window
+whose state is DECON_WIN_STATE_FINGERPRINT:
+
+  decon_core.c decon_get_mask_layer()
+      if (config && (config->state == DECON_WIN_STATE_FINGERPRINT))
+              mask = true;
+
+Android's SurfaceFlinger/HWC flags the fingerprint overlay that way. Ubuntu
+Touch composites with Lomiri/Mir, which knows nothing about that state, so
+current_mask_layer never becomes true, actual_mask_brightness stays 0 however
+mask_brightness is written, the finger is never lit, and the sensor reports no
+finger forever (bauth_FPBAuthService "nd cnt : 0").
+
+Add a module parameter that ORs into the same decision. Everything downstream
+is unchanged: the transition still runs through decon_set_mask_layer() on the
+regs path, keeping its TE/vsync wait, its call_panel_ops(mask_brightness) and
+its wait_mask_layer_trigger handshake. Only the trigger is new.
+
+Defaults to false, so a kernel carrying this patch with the parameter untouched
+behaves exactly as before. That makes it safe to boot-test on its own first and
+only then enable the flag - one variable at a time.
+
+  /sys/module/decon/parameters/force_mask_layer
+
+decon_core.c already exposes module parameters this way (decon_log_level and
+friends), so both the mechanism and the sysfs path are the established ones for
+this file.
+
+---
+ drivers/video/fbdev/exynos/dpu20/decon_core.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/drivers/video/fbdev/exynos/dpu20/decon_core.c b/drivers/video/fbdev/exynos/dpu20/decon_core.c
+index ba6cb4ce3..965207d08 100644
+--- a/drivers/video/fbdev/exynos/dpu20/decon_core.c
++++ b/drivers/video/fbdev/exynos/dpu20/decon_core.c
+@@ -70,6 +70,16 @@ int win_update_log_level = 0;
+ module_param(win_update_log_level, int, 0644);
+ int dpu_mres_log_level = 0;
+ module_param(dpu_mres_log_level, int, 0644);
++
++#if defined(CONFIG_SUPPORT_MASK_LAYER)
++/*
++ * Force the fingerprint HBM mask layer on, for compositors that never set
++ * DECON_WIN_STATE_FINGERPRINT (Ubuntu Touch / Lomiri-Mir). Without it the
++ * optical under-display sensor is never lit and never sees a finger.
++ */
++bool decon_force_mask_layer = false;
++module_param_named(force_mask_layer, decon_force_mask_layer, bool, 0644);
++#endif
+ int decon_systrace_enable;
+ 
+ struct decon_device *decon_drvdata[MAX_DECON_CNT];
+@@ -2596,6 +2606,9 @@ static bool decon_get_mask_layer(struct decon_device *decon,
+ 		}
+ 	}
+ 
++	if (decon_force_mask_layer)
++		mask = true;
++
+ 	/* normal -> mask set wait_mask_layer_trigger */
+ 	/* mask -> normal set wait_mask_layer_trigger */
+ 	if (mask != decon->current_mask_layer) {
+-- 
+2.34.1
+
