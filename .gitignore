@@ -10,3 +10,4 @@ Image
 kernel/src/
 kernel/toolchain/
 out-fp/
+out-wd/
