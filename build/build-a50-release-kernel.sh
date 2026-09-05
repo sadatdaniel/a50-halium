@@ -45,6 +45,18 @@
 #   CONFIG_RFKILL
 #       bluebinder needs /dev/rfkill. NOT needed for the Wi-Fi indicator,
 #       contrary to an earlier claim in the docs - Wi-Fi works without it.
+#
+#   CONFIG_ANDROID_BINDER_DEVICES + the anbox nodes
+#       Waydroid needs its OWN binder domain: the Halium android container
+#       already owns /dev/binder, /dev/hwbinder and /dev/vndbinder, and sharing
+#       them collides. This 4.14 tree has no binderfs (drivers/android has no
+#       binderfs.c and Kconfig offers only ANDROID_BINDER_DEVICES), so the extra
+#       nodes have to be compiled in statically. waydroid's
+#       tools/helpers/drivers.py looks for anbox-binder / anbox-vndbinder /
+#       anbox-hwbinder first, which is why those exact names are used.
+#
+#   decon-force-mask-layer.patch
+#       Fingerprint HBM. See kernel/patches-experimental/ for the full story.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -137,9 +149,10 @@ add = (
     '    echo \'CONFIG_EXTRA_FIRMWARE_DIR="firmware"\'\n'
     '    echo "CONFIG_RFKILL=y"\n'
     '    echo "CONFIG_RFKILL_INPUT=y"\n'
+    '    echo \'CONFIG_ANDROID_BINDER_DEVICES="binder,hwbinder,vndbinder,anbox-binder,anbox-hwbinder,anbox-vndbinder"\'\n'
 ) % fw
 open(path, "w").write(s.replace(anchor, add + anchor))
-print("I: build.sh patched with CONFIG_EXTRA_FIRMWARE and CONFIG_RFKILL")
+print("I: build.sh patched with CONFIG_EXTRA_FIRMWARE, CONFIG_RFKILL and the anbox binder devices")
 PY
 
 "$REPO_ROOT/build/build-kernel.sh" --out "$OUT_DIR"
