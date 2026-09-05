@@ -1,6 +1,26 @@
 #!/usr/bin/env python3
 """Build AppArmor in and make it the default LSM.
 
+!!! THIS DOES NOT BOOT, AND IT IS NOT THE GPS FIX. Read this first. !!!
+
+Boot-tested 2026-09-05: the resulting kernel does not boot at all - no ping,
+no adb, no USB gadget enumerating, so it fails before userspace, earlier than
+the Android container this change was expected to upset. Recovery needed TWRP.
+The option set below changes four things at once; if you retry, enable
+CONFIG_SECURITY_APPARMOR alone first and leave SELinux the default LSM.
+
+The GPS reasoning below is also wrong. AppArmor is NOT required for location:
+TrustStorePermissionManager checks
+TRUST_STORE_PERMISSION_MANAGER_IS_RUNNING_UNDER_TESTING before it reads any
+AppArmor profile, and a systemd drop-in setting that makes sessions work on
+this exact kernel. Verified. See a50-ubuntu-touch
+docs/experiments/009-gps-permissions.md. AppArmor is still wanted for app
+confinement - just not for this.
+
+The quoted error below was never observed either; the real one is
+com.lomiri.location.Service.Error.CreatingSession, returned to the caller and
+never logged.
+
 Ubuntu Touch identifies applications through AppArmor. Without it
 lomiri-location-service cannot establish which app is asking for a position
 and refuses every session:
