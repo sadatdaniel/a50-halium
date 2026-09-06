@@ -267,8 +267,8 @@ it. Published ones exist, so take the one for the port you are building:
 
 | for | donor | where |
 | --- | --- | --- |
-| Ubuntu Touch | `boot.img`, `90c281f8…` | [a50-ubuntu-touch releases](https://github.com/sadatdaniel/a50-ubuntu-touch/releases) |
-| Droidian | `boot.img`, `d69a30a6…` | a50-droidian releases (**private repository** — see below) |
+| Ubuntu Touch | `boot.img`, `90c281f8…` | [`a50-ubports-halium-*`](https://github.com/sadatdaniel/a50-halium/releases) — here |
+| Droidian | `boot.img`, `d69a30a6…` | [`a50-droidian-halium-*`](https://github.com/sadatdaniel/a50-halium/releases) — here |
 
 Checked, not assumed: repacking the published Ubuntu Touch boot image with its
 own published `Image` and `-` for the ramdisk reproduces `90c281f8…`
@@ -374,10 +374,9 @@ chain from pinned source to a booted phone is verified link by link:**
 | release kernel → boot image | `90c281f8…`, running on the development device today; what a50-ubuntu-touch's installer carries |
 | adaptation package → device | 6/6 fixes applied on a real boot |
 
-Both boot images are published with hashes, so any can be restored from TWRP
-rather than existing only on one laptop —
-[a50-droidian releases](https://github.com/sadatdaniel/a50-droidian/releases),
-[a50-ubuntu-touch releases](https://github.com/sadatdaniel/a50-ubuntu-touch/releases).
+Both boot images are published here, per port, with hashes and a support
+matrix — `a50-ubports-halium-*` and `a50-droidian-halium-*`. Nothing exists
+only on one laptop.
 
 What is **not** here, and is not planned to be: an `android-rootfs` recipe (both
 ports fetch a GSI from their own upstream) and vendor blob *redistribution*
