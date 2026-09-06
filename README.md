@@ -66,11 +66,19 @@ four expensive mistakes.
 
 | | |
 | --- | --- |
-| [**a50-ubuntu-touch**](https://github.com/sadatdaniel/a50-ubuntu-touch) | Ubuntu Touch 26.04, Halium 11. Audio, Bluetooth incl. A2DP, calls, mobile data, Wi-Fi, GPS, Waydroid. Ships a recovery-flashable installer |
-| [**a50-droidian**](https://github.com/sadatdaniel/a50-droidian) | Droidian (Debian + Phosh). Display at 60 Hz, touch, Wi-Fi, audio. Ships a `package-sideload` bundle |
+| [**a50-ubuntu-touch**](https://github.com/sadatdaniel/a50-ubuntu-touch) | Ubuntu Touch 26.04, Halium 11. Audio, Bluetooth incl. A2DP, calls, mobile data, Wi-Fi, GPS, Waydroid. Ships a recovery-flashable installer. **Public** |
+| [**a50-droidian**](https://github.com/sadatdaniel/a50-droidian) | Droidian (Debian + Phosh). Display at 60 Hz, touch, Wi-Fi, audio. Ships a `package-sideload` bundle. **Private** — the links to it in this file only resolve for its owner |
 
 Both flash a boot image built here. Neither has an OTA channel; both are
 installed by writing a boot image and a rootfs.
+
+### What a third party can actually rebuild
+
+| | |
+| --- | --- |
+| **This repository** | everything, from public sources — the kernel fork, the toolchain and the build container are all public and pinned. The only thing you supply is eight firmware blobs, extracted from your own phone by a script in here |
+| **Ubuntu Touch** | everything. Its repository is public, the Ubuntu Touch rootfs and Halium GSI are fetched from UBports, and a published release provides the donor boot image |
+| **Droidian** | **no.** a50-droidian is a private repository, so its adaptation, its initramfs tree, its build scripts and its release artifacts are not reachable. Nothing in *this* repository depends on it — the base kernel builds and CI passes without it — but the Droidian port cannot currently be reproduced by anyone else |
 
 ## Build the kernel
 
@@ -99,6 +107,25 @@ of what the ports need.
 | --- | --- |
 | `build/build-kernel.sh` | the **base** kernel: `kernel/patches/*` only. This is what CI builds and what `expected-artifacts.sha256` pins |
 | `build/build-a50-release-kernel.sh` | **what the ports actually ship.** The base plus five more patches and three Kconfig additions. Needs `--firmware DIR` |
+
+**The two ports do not run the same kernel today**, and that is worth knowing
+before you debug either of them:
+
+| | Ubuntu Touch | Droidian |
+| --- | --- | --- |
+| built by | `build-a50-release-kernel.sh` | `build-kernel.sh` |
+| `Image` | `04b2442d…` | `074aad86…` |
+| patches | 9 | 4 |
+| Bluetooth, ABOX firmware, RFKILL, anbox binders | yes | **no** |
+| ramdisk | upstream Halium initramfs (`dynparts`) | this device's own, `0af4d23f…` |
+| boot image | `90c281f8…` | `d69a30a6…` |
+
+Same pinned source commit and toolchain in both cases — the difference is
+entirely the patch set and Kconfig. Droidian is on the base kernel for
+historical reasons, not deliberate ones, which is exactly why Bluetooth works
+under Ubuntu Touch and not under Droidian on the same phone. Building the
+release kernel with Droidian's ramdisk is the obvious next experiment and has
+not been done.
 
 `build-a50-release-kernel.sh` is the single authoritative recipe for a release.
 On top of the base it adds:
@@ -142,6 +169,21 @@ This reuses a donor image's header and ramdisk and patches only `kernel_size`
 and `ramdisk_size`. That is safe here because S-Boot ignores the header `id`
 digest — measured, not assumed. The script refuses to write an image larger
 than the boot partition rather than let `dd` truncate it silently.
+
+**Where the donor comes from.** It is a chicken and egg only once: this
+device's header values have to come out of an image that has actually booted
+it. Published ones exist, so take the one for the port you are building:
+
+| for | donor | where |
+| --- | --- | --- |
+| Ubuntu Touch | `boot.img`, `90c281f8…` | [a50-ubuntu-touch releases](https://github.com/sadatdaniel/a50-ubuntu-touch/releases) |
+| Droidian | `boot.img`, `d69a30a6…` | a50-droidian releases (**private repository** — see below) |
+
+Checked, not assumed: repacking the published Ubuntu Touch boot image with its
+own published `Image` and `-` for the ramdisk reproduces `90c281f8…`
+byte for byte. So a third party with only this repository, the public kernel
+fork and a published release can rebuild the shipped boot image and confirm it
+matches.
 
 The **ramdisk** is distro-specific and is not built here: Ubuntu Touch uses the
 upstream Halium initramfs, Droidian builds its own with
