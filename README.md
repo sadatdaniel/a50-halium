@@ -119,8 +119,20 @@ work and for the porting narrative.
 
 ## Ports built on this
 
-* [a50-droidian](https://github.com/sadatdaniel/a50-droidian) — Droidian (Debian + Phosh). Working.
-* Ubuntu Touch — planned. **Start with [`docs/starting-a-new-port.md`](docs/starting-a-new-port.md).**
+* [a50-droidian](https://github.com/sadatdaniel/a50-droidian) — Droidian
+  (Debian + Phosh). Working: display, touch, Wi-Fi, audio.
+* [a50-ubuntu-touch](https://github.com/sadatdaniel/a50-ubuntu-touch) — Ubuntu
+  Touch 26.04, Halium 11. Working: audio, Bluetooth incl. A2DP, calls, mobile
+  data, Wi-Fi, GPS and Waydroid. It ships a recovery-flashable installer whose
+  boot image is built by **this** repository —
+  `build/build-a50-release-kernel.sh`, which is the authoritative recipe for
+  what a release carries, then `build/pack-boot-image.py`. That release is
+  **untested on hardware**; its notes say so.
+
+`build/build-a50-release-kernel.sh` is what the Ubuntu Touch port ships and
+adds five patches plus `CONFIG_EXTRA_FIRMWARE`, `CONFIG_RFKILL` and the
+`anbox-*` binder devices on top of `kernel/patches/`. `build/build-kernel.sh`
+alone builds only the *base* kernel, which is not what any release contains.
 
 ## A warning worth reading before you build anything
 
