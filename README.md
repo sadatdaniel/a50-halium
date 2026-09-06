@@ -332,7 +332,7 @@ The base delta against upstream is **four small patches, about 70 lines**:
 
 Five more live in `kernel/patches-experimental/` and are applied by
 `build-a50-release-kernel.sh`; the table under
-[Which build script](#which-build-script) says what each does. All nine apply
+[Which profile](#which-profile) says what each does. All nine apply
 cleanly to a pristine tree — that is checked, because for a while two of them
 did not and the build only worked because a previous run had left the tree
 patched.
