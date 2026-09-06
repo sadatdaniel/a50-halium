@@ -67,8 +67,8 @@ four expensive mistakes.
 
 | | |
 | --- | --- |
-| [**a50-ubuntu-touch**](https://github.com/sadatdaniel/a50-ubuntu-touch) | Ubuntu Touch 26.04, Halium 11. Audio, Bluetooth incl. A2DP, calls, mobile data, Wi-Fi, GPS, Waydroid. Ships a recovery-flashable installer. **Public** |
-| [**a50-droidian**](https://github.com/sadatdaniel/a50-droidian) | Droidian (Debian + Phosh). Display at 60 Hz, touch, Wi-Fi, audio. Ships a `package-sideload` bundle. **Private** — the links to it in this file only resolve for its owner |
+| [**a50-ubuntu-touch**](https://github.com/sadatdaniel/a50-ubuntu-touch) | Ubuntu Touch 26.04, Halium 11. Audio, Bluetooth incl. A2DP, calls, mobile data, Wi-Fi, GPS, Waydroid. Ships a recovery-flashable installer, **untested on hardware so far**. **Public** |
+| [**a50-droidian**](https://github.com/sadatdaniel/a50-droidian) | Droidian (Debian + Phosh). Display at 60 Hz, touch, Wi-Fi, audio. Ships a `package-sideload` bundle, **untested on hardware so far**. **Private** — the links to it in this file only resolve for its owner |
 
 Both flash a boot image built here. Neither has an OTA channel; both are
 installed by writing a boot image and a rootfs.
@@ -177,7 +177,7 @@ Releases are therefore named for the consumer, not for the date alone:
 | tag | for | contains |
 | --- | --- | --- |
 | `a50-ubports-halium-<date>` | [a50-ubuntu-touch](https://github.com/sadatdaniel/a50-ubuntu-touch) | `boot.img` (Halium initramfs), `Image`, `System.map`, `build-manifest.txt`, `SHA256SUMS` |
-| `a50-droidian-halium-<date>` | [a50-droidian](https://github.com/sadatdaniel/a50-droidian) | `boot.img` (this project's initramfs), `Image`, `System.map`, `build-manifest.txt`, `SHA256SUMS` |
+| `a50-droidian-halium-<date>` | [a50-droidian](https://github.com/sadatdaniel/a50-droidian) | `boot.img` (this project's initramfs), `Image`, `ramdisk.img`, `SHA256SUMS`. The 2026-09-06 one predates the manifest change and carries no `System.map` |
 
 Each release states **which kernel profile it was built with and what that
 means for the hardware** — a support matrix, not a changelog. A boot image
