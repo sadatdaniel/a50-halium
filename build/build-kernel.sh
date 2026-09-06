@@ -6,25 +6,79 @@
 # sha256 of every artifact. Nothing device-specific is baked into the container
 # image - the pin is the only thing that decides what comes out.
 #
-#   ./build/build-kernel.sh [--out DIR] [--jobs N] [--keep-src]
+#   ./build/build-kernel.sh [--profile base|full] [--firmware DIR]
+#                           [--out DIR] [--jobs N] [--keep-src]
 #
 # Inside the container image built from build/Dockerfile:
 #   docker run --rm -v "$PWD:/src" a50-halium-build ./build/build-kernel.sh
+#
+# PROFILES. There is one kernel source and one pin; the profile decides which
+# patches and Kconfig go on top of it.
+#
+#   base  kernel/patches/ only - four patches. This is what CI builds and what
+#         kernel/expected-artifacts.sha256 gates. Image 074aad86.
+#
+#   full  base plus five patches from kernel/patches-experimental/ and three
+#         Kconfig additions: the ABOX firmware built in, RFKILL, and the anbox
+#         binder devices. Needs --firmware DIR. Image 04b2442d.
+#
+# Which one a port wants:
+#
+#   Ubuntu Touch  full   - it needs all of it: Bluetooth, the audio DSP
+#                          firmware, and Waydroid's own binder domain
+#   Droidian      base   - historically. `full` is a superset and everything
+#                          it adds is either an improvement there (Bluetooth,
+#                          the audio firmware) or inert (the fingerprint mask
+#                          layer defaults off, the anbox nodes go unused), so
+#                          the split is not deliberate. It has simply never
+#                          been boot-tested under Droidian.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT_DIR="$REPO_ROOT/out"
 JOBS=""                 # empty until the pin is read; see BUILD_JOBS below
 KEEP_SRC=0
+PROFILE=base
+FW_DIR=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --out)      OUT_DIR="$2"; shift 2 ;;
         --jobs)     JOBS="$2"; shift 2 ;;
         --keep-src) KEEP_SRC=1; shift ;;
+        --profile)  PROFILE="$2"; shift 2 ;;
+        --firmware) FW_DIR="$2"; shift 2 ;;
         *) echo "E: unknown argument: $1" >&2; exit 2 ;;
     esac
 done
+
+case "$PROFILE" in
+    base) ;;
+    full) [ -n "$FW_DIR" ] || {
+              echo "E: --profile full needs --firmware DIR." >&2
+              echo "E: eight proprietary Samsung blobs are compiled into this" >&2
+              echo "E: kernel; get them with build/extract-vendor-firmware.sh" >&2
+              echo "E: run on your own device." >&2
+              exit 2; } ;;
+    *)    echo "E: --profile must be 'base' or 'full', not '$PROFILE'" >&2; exit 2 ;;
+esac
+
+# The five extra patches of the full profile, in the order they are applied.
+# Order is part of the artifact: changing it changes the Image hash.
+EXTRA_PATCHES="misc-open-scope-and-tracing abox-fixup-helper-dai-guard \
+bluetooth-linux-stack bluetooth-hci-sock-restore decon-force-mask-layer"
+
+# The eight blobs CONFIG_EXTRA_FIRMWARE compiles in. The ABOX DSP asks for
+# calliope_sram.bin at t=1.43s and this device has no filesystem of any kind
+# until t=2.08s, so built-in firmware is the only source available in time.
+FIRMWARE="calliope_sram.bin calliope_dram.bin calliope_iva.bin tfadsp.bin \
+AP_AUDIO_SLSI.bin APBargeIn_AUDIO_SLSI.bin APBiBF_AUDIO_SLSI.bin Tfa9872.cnt"
+
+if [ "$PROFILE" = full ]; then
+    for f in $FIRMWARE; do
+        [ -f "$FW_DIR/$f" ] || { echo "E: missing firmware blob: $FW_DIR/$f" >&2; exit 1; }
+    done
+fi
 
 # --- read the pin -----------------------------------------------------------
 LOCK="$REPO_ROOT/kernel/source.lock"
@@ -129,13 +183,58 @@ fi
 # --- this port's patch series ------------------------------------------------
 # Applied to the working tree, not committed, so the checked-out commit stays
 # verifiable against the pin above.
-if [ ! -e "$SRC/.a50-patched" ]; then
-    for p in "$REPO_ROOT"/kernel/patches/*.patch; do
-        [ -e "$p" ] || continue
+#
+# The list is built here rather than by globbing a directory that the build
+# mutates. An earlier version of the full profile COPIED the experimental
+# patches into kernel/patches/ and relied on the glob picking them up. That
+# left the repository dirty mid-build and hid a real bug, where the series was
+# applied after the step that needed it and only worked because a previous run
+# had left the tree patched.
+PATCH_LIST=""
+for p in "$REPO_ROOT"/kernel/patches/*.patch; do
+    [ -e "$p" ] || continue
+    PATCH_LIST="$PATCH_LIST $p"
+done
+if [ "$PROFILE" = full ]; then
+    for name in $EXTRA_PATCHES; do
+        p="$REPO_ROOT/kernel/patches-experimental/$name.patch"
+        [ -f "$p" ] || { echo "E: missing patch: $p" >&2; exit 1; }
+        PATCH_LIST="$PATCH_LIST $p"
+    done
+fi
+
+# The sentinel records the profile. Without that, a source tree already
+# patched for `base` would be silently reused for a `full` build and produce a
+# kernel that is neither.
+SENTINEL="$SRC/.a50-patched"
+if [ -e "$SENTINEL" ]; then
+    was="$(cat "$SENTINEL" 2>/dev/null || echo unknown)"
+    if [ "$was" != "$PROFILE" ]; then
+        echo "E: $SRC is already patched for profile '$was', not '$PROFILE'." >&2
+        echo "E: delete it and re-run - patches cannot be un-applied reliably." >&2
+        exit 1
+    fi
+    echo "I: source already patched for profile '$PROFILE'"
+else
+    for p in $PATCH_LIST; do
         echo "I: applying $(basename "$p")"
         git -C "$SRC" apply --whitespace=nowarn "$p"
     done
-    touch "$SRC/.a50-patched"
+    printf '%s' "$PROFILE" > "$SENTINEL"
+fi
+
+# --- full profile: firmware and the extra Kconfig ---------------------------
+if [ "$PROFILE" = full ]; then
+    # CONFIG_EXTRA_FIRMWARE_DIR is hardcoded to "firmware" by firmware/Makefile,
+    # i.e. relative to the kernel source root.
+    mkdir -p "$SRC/firmware"
+    for f in $FIRMWARE; do cp "$FW_DIR/$f" "$SRC/firmware/"; done
+    echo "I: installed $(echo $FIRMWARE | wc -w) firmware blobs into the kernel tree"
+
+    # Appended to the same generated config set kernel/patches/0002 writes.
+    # That anchor only exists once 0002 has been applied, which is why this
+    # runs after the patch loop and not before it.
+    python3 "$REPO_ROOT/build/apply-full-kconfig.py" "$SRC/build.sh" "$FIRMWARE"
 fi
 
 # --- toolchain at the pinned commit ------------------------------------------
@@ -224,7 +323,9 @@ toolchain_repo=$TOOLCHAIN_REPO
 toolchain_commit=$TOOLCHAIN_COMMIT
 build_device=$BUILD_DEVICE
 build_variant=$BUILD_VARIANT
-patches=$(cd "$REPO_ROOT/kernel/patches" && ls *.patch 2>/dev/null | tr '\n' ' ')
+profile=$PROFILE
+patches=$(for p in $PATCH_LIST; do basename "$p"; done | tr "
+" " ")
 image_bytes=$IMAGE_SIZE
 built_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 MANIFEST

@@ -31,7 +31,8 @@ Touch or Droidian, and both consume what it produces.
 * [The device](#the-device)
 * [Ports built on this](#ports-built-on-this)
 * [Build the kernel](#build-the-kernel)
-* [Which build script](#which-build-script)
+* [Which profile](#which-profile)
+* [Releases, and what they are named](#releases-and-what-they-are-named)
 * [Vendor firmware](#vendor-firmware)
 * [Pack a boot image](#pack-a-boot-image)
 * [What "reproducible" means here](#what-reproducible-means-here)
@@ -98,15 +99,38 @@ a clean GitHub runner that has never seen this device. **The badge is the
 claim**: if CI is green the kernel rebuilds from nothing; if it is red it does
 not, whatever this file says.
 
-## Which build script
+## Which profile
 
-There are two, and picking the wrong one produces a kernel that is missing half
-of what the ports need.
+One script, one flag. `--profile` decides which patches and which Kconfig go on
+top of the pinned source; there is no second build script and nothing is copied
+around.
 
-| | |
-| --- | --- |
-| `build/build-kernel.sh` | the **base** kernel: `kernel/patches/*` only. This is what CI builds and what `expected-artifacts.sha256` pins |
-| `build/build-a50-release-kernel.sh` | **what the ports actually ship.** The base plus five more patches and three Kconfig additions. Needs `--firmware DIR` |
+```bash
+./build/build-kernel.sh --profile base                       # 4 patches
+./build/build-kernel.sh --profile full --firmware /fw        # 9 + 3 Kconfig
+```
+
+| | `base` (default) | `full` |
+| --- | --- | --- |
+| patches | `kernel/patches/*` — four | those plus five from `kernel/patches-experimental/` |
+| Kconfig | as the tree ships it | `CONFIG_EXTRA_FIRMWARE`, `CONFIG_RFKILL`, `CONFIG_ANDROID_BINDER_DEVICES` |
+| needs | nothing | `--firmware DIR`, eight blobs off your own phone |
+| `Image` | `074aad86…` | `04b2442d…` |
+| gated by | CI, against `kernel/expected-artifacts.sha256` | nothing yet |
+
+`build/build-a50-release-kernel.sh` still exists and is now a two-line wrapper
+for `--profile full`, because release manifests and two sibling repositories
+name it. New callers should use the flag.
+
+It used to be a real script, and how it worked is worth knowing if you read an
+old manifest: it **copied** the five experimental patches into
+`kernel/patches/` so `build-kernel.sh`'s glob would pick them up, then removed
+them again from a trap. That left the repository dirty in the middle of a build
+and hid a real bug — the series was applied after the step that needed it, and
+the build only worked because a previous run had left the tree patched. The
+patch list is now built in memory, in a fixed order, and the sentinel in the
+source tree records which profile it was patched for, so asking for the other
+one is an error instead of a silently wrong kernel.
 
 **The two ports do not run the same kernel today**, and that is worth knowing
 before you debug either of them:
@@ -141,6 +165,60 @@ On top of the base it adds:
 | `CONFIG_RFKILL` | `bluebinder` needs `/dev/rfkill`. It is **not** needed for the Wi-Fi indicator, contrary to an earlier claim in these docs |
 | `CONFIG_ANDROID_BINDER_DEVICES` + `anbox-*` | Waydroid needs its own binder domain, and this 4.14 tree has no binderfs, so the extra nodes have to be compiled in statically |
 
+## Releases, and what they are named
+
+This repository is the **device base**: everything either port needs from the
+device side is built here, and published here. The port repositories hold only
+what is specific to their distribution — Ubuntu Touch's `deviceinfo` and
+overlay, Droidian's adaptation package — and consume these artifacts.
+
+Releases are therefore named for the consumer, not for the date alone:
+
+| tag | for | contains |
+| --- | --- | --- |
+| `a50-ubports-halium-<date>` | [a50-ubuntu-touch](https://github.com/sadatdaniel/a50-ubuntu-touch) | `boot.img` (Halium initramfs), `Image`, `System.map`, `build-manifest.txt`, `SHA256SUMS` |
+| `a50-droidian-halium-<date>` | [a50-droidian](https://github.com/sadatdaniel/a50-droidian) | `boot.img` (this project's initramfs), `Image`, `System.map`, `build-manifest.txt`, `SHA256SUMS` |
+
+Each release states **which kernel profile it was built with and what that
+means for the hardware** — a support matrix, not a changelog. A boot image
+whose kernel has no `CONFIG_BT` is not a worse version of one that does; it is
+a different thing, and the release has to say so before somebody spends an
+evening debugging `bluetoothd`.
+
+The two differ only in the ramdisk, and that difference is load-bearing: Ubuntu
+Touch boots the upstream Halium initramfs, Droidian boots one built by this
+project, and swapping them gets you a device that reaches the bootloader and
+then stops with no message. `build/make-boot-image.sh --port ubports|droidian`
+takes the ramdisk from a donor image and **refuses a donor that is not
+known-good for that port**, because that is exactly the mistake this
+arrangement invites.
+
+### How this compares to what the community does
+
+Worth knowing, because it is a deliberate deviation.
+
+Upstream Halium shares **source**, not binaries: a device tree at
+`android_device_<vendor>_<codename>` and a kernel at
+`android_kernel_<vendor>_<soc>`, with each distribution building and publishing
+its own images from them. Droidian goes further and makes the kernel a Debian
+package — `linux-bootimage-<version>-<vendor>-<device>`, built from a
+`droidian` branch on the kernel repository itself. UBports' community ports
+build the kernel inside the port repository from
+`halium-generic-adaptation-build-tools`. Nobody upstream has a shared repo that
+publishes per-distro boot images.
+
+The reason they do not need one is that they do not need to: UBports'
+documentation says outright that a device ported to Ubuntu Touch on Halium 9 or
+later "can likely run Droidian without major changes to the kernel". One kernel,
+two distributions, each packaging it their own way.
+
+That is the direction this repository should end up in too — see the profile
+table above: `full` is a superset of `base`, and everything it adds is either an
+improvement for Droidian or inert there. Until `full` has been boot-tested under
+Droidian, two profiles and two named releases are the honest arrangement: they
+say what each port is actually running, instead of implying a sameness that has
+not been demonstrated.
+
 ## Vendor firmware
 
 Eight proprietary Samsung blobs are compiled into the release kernel. They are
@@ -161,13 +239,26 @@ docker run --rm -v a50-ksrc:/src/kernel/src -v "$PWD:/src" -v /tmp/a50-fw:/fw \
 
 ## Pack a boot image
 
+Use the wrapper rather than the packer directly. It takes the ramdisk from the
+donor and **refuses a donor that is not known-good for the port you asked
+for**, which is the mistake this arrangement invites: the two ports' ramdisks
+are not interchangeable, and the wrong one gives you a device that reaches the
+bootloader and then stops with nothing on screen and nothing in a log.
+
+```bash
+./build/make-boot-image.sh --port ubports  --image out/Image --donor boot.img
+./build/make-boot-image.sh --port droidian --image out/Image --donor boot.img
+```
+
+Underneath it is:
+
 ```bash
 ./build/pack-boot-image.py known-good-boot.img out/Image - new-boot.img
 ```
 
-This reuses a donor image's header and ramdisk and patches only `kernel_size`
-and `ramdisk_size`. That is safe here because S-Boot ignores the header `id`
-digest — measured, not assumed. The script refuses to write an image larger
+which reuses the donor image's header and ramdisk and patches only
+`kernel_size` and `ramdisk_size`. That is safe here because S-Boot ignores the
+header `id` digest — measured, not assumed. It refuses to write an image larger
 than the boot partition rather than let `dd` truncate it silently.
 
 **Where the donor comes from.** It is a chicken and egg only once: this
@@ -255,15 +346,18 @@ series says exactly what is ours.
 ```
 kernel/source.lock             every pinned input; the single source of truth
 kernel/patches/                boot-tested base series; what build-kernel.sh applies
-kernel/patches-experimental/   applied by build-a50-release-kernel.sh
+kernel/patches-experimental/   the five the `full` profile adds
 kernel/patches-historical/     kept for the record, never applied - read its README
 kernel/config/                 Kconfig fragments, each documenting why it exists
 kernel/expected-artifacts.sha256   what the current pin must produce
 build/Dockerfile               pinned build environment
 build/build-kernel.sh          fetch -> verify pin -> patch -> build -> checksum
-build/build-a50-release-kernel.sh  what the ports ship
+                               --profile base|full selects the patch set
+build/build-a50-release-kernel.sh  thin wrapper for --profile full
 build/extract-vendor-firmware.sh   pull the eight proprietary blobs off a device
-build/pack-boot-image.py       kernel + donor header/ramdisk -> boot.img
+build/make-boot-image.sh       kernel + the right port's ramdisk -> boot.img
+build/pack-boot-image.py       the packer it calls
+build/apply-full-kconfig.py    the full profile's extra Kconfig
 device/samsung-a50/            facts about the hardware that cost time to learn
 ```
 
