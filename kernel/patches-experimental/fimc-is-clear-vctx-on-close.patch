@@ -1,0 +1,54 @@
+From: A50 port <noreply@example.com>
+Date: Tue, 9 Sep 2026 00:00:00 +0000
+Subject: [PATCH] fimc-is: clear device->vctx on sensor close
+
+Suspending this device panics the SoC. Measured with pm_test: the freezer
+phase completes cleanly, the devices phase kills it every time, and the
+bootloader's own crash record names the site exactly:
+
+  "PC":"fimc_is_devicemgr_open+0x1e8/0x3a0"
+  "LR":"fimc_is_devicemgr_open+0x178/0x3a0"
+  "FAULT":"0xffffff800c01b3b0"
+  "RR":"KP"   "PANIC":"Fatal exception"
+
+Disassembling that offset in the built vmlinux gives:
+
+  +0x1e4:  ldr x8, [x19, #272]     ; x8 = sensor->vctx
+  +0x1e8:  str x22, [x8, #9136]    ; sensor->vctx->next_device = ischain
+
+i.e. the store immediately after fimc_is_group_open() returns. Offset 272
+is confirmed as vctx by the earlier FIMC_BUG(!sensor->vctx) check at
++0x40, which loads the same offset and branches on zero.
+
+So vctx is non-NULL - it passes that guard - and still faults when
+dereferenced. It is a dangling pointer, not a null one, which is why the
+fault address is a plausible-looking kernel address rather than 0.
+
+The cause is that device->vctx is assigned in exactly one place, in
+fimc_is_sensor_open(), and is never cleared anywhere. fimc_is_sensor_close()
+tears down the video context but leaves device->vctx pointing at it. Any
+subsequent read sees freed memory, and the vendor's own NULL guard cannot
+catch it because the pointer is not NULL.
+
+Clearing it on close restores that guard: a stale open then returns
+-EINVAL through FIMC_BUG() instead of writing into freed memory. This is
+the vendor's existing defensive intent, not a new mechanism - USE_FIMC_BUG
+is defined for this tree, so FIMC_BUG() returns -EINVAL rather than
+BUG_ON()ing.
+--- a/drivers/media/platform/exynos/fimc-is2/fimc-is-device-sensor_v2.c
++++ b/drivers/media/platform/exynos/fimc-is2/fimc-is-device-sensor_v2.c
+@@ -1913,7 +1913,14 @@
+ 	clear_bit(FIMC_IS_SENSOR_ITF_REGISTER, &device->state);
+ 	set_bit(FIMC_IS_SENSOR_BACK_NOWAIT_STOP, &device->state);
+ 
+ p_err:
++	/*
++	 * Set only in fimc_is_sensor_open() and never cleared, so it outlived
++	 * the video context it points at. FIMC_BUG(!sensor->vctx) in
++	 * fimc_is_devicemgr_open() is a NULL check, so a stale non-NULL
++	 * pointer walks past it and faults on sensor->vctx->next_device.
++	 */
++	device->vctx = NULL;
+ 	minfo("[SEN:D] %s():%d\n", device, __func__, ret);
+ 	return ret;
+ }

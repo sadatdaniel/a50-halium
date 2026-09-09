@@ -66,7 +66,8 @@ esac
 # The five extra patches of the full profile, in the order they are applied.
 # Order is part of the artifact: changing it changes the Image hash.
 EXTRA_PATCHES="misc-open-scope-and-tracing abox-fixup-helper-dai-guard \
-bluetooth-linux-stack bluetooth-hci-sock-restore decon-force-mask-layer"
+bluetooth-linux-stack bluetooth-hci-sock-restore decon-force-mask-layer \
+fimc-is-clear-vctx-on-close"
 
 # The eight blobs CONFIG_EXTRA_FIRMWARE compiles in. The ABOX DSP asks for
 # calliope_sram.bin at t=1.43s and this device has no filesystem of any kind

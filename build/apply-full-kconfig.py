@@ -26,6 +26,18 @@ add = (
     '    echo \'CONFIG_EXTRA_FIRMWARE_DIR="firmware"\'\n'
     '    echo "CONFIG_RFKILL=y"\n'
     '    echo "CONFIG_RFKILL_INPUT=y"\n'
+    # Suspend crashes this device: `echo mem > /sys/power/state` kills it with
+    # no PM messages and the bootloader then reports sec_debug.reset_reason=4
+    # (RR_K). Without PM_DEBUG the kernel prints almost nothing on the way in,
+    # and /sys/power/suspend_stats does not exist - which Android 11's
+    # android.system.suspend@1.0-service also complains about at startup:
+    #   "Error opening /sys/power/suspend_stats: No such file or directory"
+    # PSTORE/PSTORE_RAM are already =y in the base config and ramoops already
+    # has a region (mem_address=0xF9C00000, 2 MB), so this adds only the PM
+    # side. See a50-ubuntu-touch docs for the suspend investigation.
+    '    echo "CONFIG_PM_DEBUG=y"\n'
+    '    echo "CONFIG_PM_SLEEP_DEBUG=y"\n'
+    '    echo "CONFIG_PM_ADVANCED_DEBUG=y"\n'
     '    echo \'CONFIG_ANDROID_BINDER_DEVICES="binder,hwbinder,vndbinder,anbox-binder,anbox-hwbinder,anbox-vndbinder"\'\n'
 ) % fw
 
