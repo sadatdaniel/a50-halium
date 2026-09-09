@@ -1,0 +1,70 @@
+From: A50 port <noreply@example.com>
+Date: Wed, 9 Sep 2026 00:00:00 +0000
+Subject: [PATCH] fimc-is: close the open() race that panics the kernel
+
+Opening an SSx V4L2 node concurrently panics this SoC, reproducibly:
+
+  8 simultaneous opens of /dev/video101 (exynos-fimc-is-ss0)
+  -> uptime 1211s -> 15s, every time
+
+with the bootloader's crash record naming it exactly:
+
+  "PC":"fimc_is_devicemgr_open+0x1e8/0x3a0"
+  "STACK":"fimc_is_devicemgr_open:fimc_is_sensor_open:
+           fimc_is_ssx_video_open:v4l2_open:chrdev_open:vfs_open:
+           path_openat:do_filp_open:SyS_openat"
+  "RR":"KP"   "KTIME":"1211"
+
+The faulting instruction, from the built vmlinux, is
+
+  +0x1e4:  ldr x8, [x19, #272]     ; x8 = sensor->vctx
+  +0x1e8:  str x22, [x8, #9136]    ; sensor->vctx->next_device = ischain
+
+so vctx is non-NULL, passes FIMC_BUG(!sensor->vctx) at +0x40, and still
+faults: it is dangling, not null.
+
+The cause is a plain test-then-set with a 91 line window:
+
+  1712   if (test_bit(FIMC_IS_SENSOR_OPEN, &device->state))  <- check
+  1739       device->vctx = vctx;
+  1787       fimc_is_devicemgr_open(...)                      <- faults
+  1803   set_bit(FIMC_IS_SENSOR_OPEN, &device->state);        <- set
+
+Nothing serialises fimc_is_sensor_open(). Two opens both pass the check
+before either sets the bit, both write the shared device->vctx, and when
+one unwinds through its error path and frees its video context the other
+dereferences it.
+
+test_and_set_bit() closes the window atomically. The error paths inside it
+must then release the bit, so err_open_state clears it; the already-open
+case gets its own label, because there the bit belongs to the other opener
+and must not be touched. The later set_bit at 1803 becomes redundant and
+is left alone.
+
+This is Samsung vendor code; fimc-is2 is not in mainline (mainline carries
+exynos4-is), so there is no upstream to send this to.
+
+--- a/drivers/media/platform/exynos/fimc-is2/fimc-is-device-sensor_v2.c
++++ b/drivers/media/platform/exynos/fimc-is2/fimc-is-device-sensor_v2.c
+@@ -1709,9 +1709,9 @@
+ 
+ 	core = device->private_data;
+ 
+-	if (test_bit(FIMC_IS_SENSOR_OPEN, &device->state)) {
++	if (test_and_set_bit(FIMC_IS_SENSOR_OPEN, &device->state)) {
+ 		merr("already open", device);
+ 		ret = -EMFILE;
+-		goto err_open_state;
++		goto err_already_open;
+ 	}
+ 
+@@ -1822,7 +1822,9 @@
+ 	if (ret_err)
+ 		merr("fimc_is_csi_close is fail(%d)", device, ret_err);
+ err_csi_open:
+ err_camif_open:
+ err_open_state:
++	clear_bit(FIMC_IS_SENSOR_OPEN, &device->state);
++err_already_open:
+ 	minfo("[SEN:D] %s():%d\n", device, __func__, ret);
+ 	return ret;
