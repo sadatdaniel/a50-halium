@@ -1,0 +1,84 @@
+From: A50 port <noreply@example.com>
+Date: Thu, 10 Sep 2026 00:00:00 +0000
+Subject: [PATCH] fimc-is: release the group worker's semaphores on close, unconditionally
+
+Closing a fimc V4L2 node could hang the closing process forever in an
+unkillable D-state, taking the PM freezer down with it:
+
+  gst-plugin-scan  D   __switch_to __schedule schedule_timeout
+                        wait_for_completion kthread_stop
+                        fimc_is_group_close fimc_is_ischain_isp_close
+                        fimc_is_ixs_video_close v4l2_release ____fput
+
+Captured end to end in the fsynced kmsg log (a50-ubuntu-touch experiment
+018, crash D). SIGKILL cannot move a D-state task, so even killing the
+scanner left the boot one PM cycle away from an aborted suspend.
+
+The group worker (kthread_worker_fn on gtask->task) runs shot works.
+fimc_is_group_shot() downs gtask->smp_resource - and for sync shots
+group->smp_trigger - only AFTER passing its first REQUEST_STOP check.
+fimc_is_group_task_stop() released the resource semaphore only when the
+semaphore's wait list was already non-empty:
+
+    if (!list_empty(&gtask->smp_resource.wait_list))
+            up(&gtask->smp_resource);
+    kthread_stop(gtask->task);
+
+That is a race. A stop that runs between the worker's REQUEST_STOP check
+and its down() sees an empty wait list, skips the up(), and the worker
+sleeps on a semaphore whose only producers (frame completions) are gone -
+the client that streamed the frames has closed and the sensor is stopped.
+kthread_stop() then waits for a thread that can never leave work->func,
+while the V4L2 closer sleeps in the kernel holding the node.
+
+Fix: up() both semaphores unconditionally on the close path. A spurious
+up() is harmless by construction - the worker's next REQUEST_STOP check
+(after each down) bails to p_err_ignore, which releases exactly what it
+took, and both semaphores are re-initialised by the next group/gtask
+start (sema_init in fimc_is_group_init / fimc_is_group_task_start), so
+no count outlives the teardown. The trigger up() lives in
+fimc_is_group_close() rather than inside task_stop() so the
+streaming-stop caller is untouched.
+
+No public fix exists to lift: the newest trees carrying this driver
+(LineageOS android_kernel_samsung_exynos9820, lineage-23.2) still have
+the conditional up().
+
+This is Samsung vendor code; fimc-is2 is not in mainline, so there is no
+upstream to send this to.
+--- a/drivers/media/platform/exynos/fimc-is2/fimc-is-groupmgr.c
++++ b/drivers/media/platform/exynos/fimc-is2/fimc-is-groupmgr.c
+@@ -1049,11 +1049,17 @@
+ 	set_bit(FIMC_IS_GTASK_REQUEST_STOP, &gtask->state);
+ 
+ 
++	/* The up() below must not depend on the wait list being non-empty:
++	 * the worker downs smp_resource only after passing its first
++	 * REQUEST_STOP check, so a stop racing that window sees an empty
++	 * list, skips the release, and kthread_stop() waits forever on a
++	 * down() that nothing will complete again.
++	 */
+ 	if (!list_empty(&gtask->smp_resource.wait_list)) {
+ 		warn("gtask(%d) is not empty", gtask->id);
+ 		fimc_is_kernel_log_dump(false);
+-		up(&gtask->smp_resource);
+ 	}
++	up(&gtask->smp_resource);
+ 
+ 	/*
+ 	 * flush kthread wait until all work is complete
+@@ -1836,6 +1842,14 @@
+ 		return -EMFILE;
+ 	}
+ 
++	/* Sync-shot works block on the closing group's trigger semaphore
++	 * (fimc_is_group_shot: down_interruptible(&group->smp_trigger));
++	 * release them before stopping the worker, or kthread_stop() can
++	 * wait forever. Harmless when nobody waits: group_init re-inits
++	 * the semaphore and the REQUEST_STOP checks make the worker bail.
++	 */
++	up(&group->smp_trigger);
++
+ 	ret = fimc_is_group_task_stop(groupmgr, gtask, slot);
+ 	if (ret)
+ 		mgerr("fimc_is_group_task_stop is fail(%d)", group, group, ret);

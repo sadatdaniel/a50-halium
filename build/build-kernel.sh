@@ -67,7 +67,7 @@ esac
 # Order is part of the artifact: changing it changes the Image hash.
 EXTRA_PATCHES="misc-open-scope-and-tracing abox-fixup-helper-dai-guard \
 bluetooth-linux-stack bluetooth-hci-sock-restore decon-force-mask-layer \
-fimc-is-clear-vctx-on-close fimc-is-sensor-open-race"
+fimc-is-clear-vctx-on-close fimc-is-sensor-open-race fimc-is-group-stop-semaphore"
 
 # The eight blobs CONFIG_EXTRA_FIRMWARE compiles in. The ABOX DSP asks for
 # calliope_sram.bin at t=1.43s and this device has no filesystem of any kind
@@ -151,7 +151,9 @@ echo "I: building  -d $BUILD_DEVICE -v $BUILD_VARIANT with -j$JOBS"
 
 # --- kernel source at the pinned commit -------------------------------------
 if [ ! -d "$SRC/.git" ]; then
-    rm -rf "$SRC"
+    # A fresh a50-ksrc volume is mounted exactly here and cannot be removed
+    # ("Device or resource busy"); the rm is for a stale plain directory.
+    rm -rf "$SRC" 2>/dev/null || true
     mkdir -p "$SRC"
     git -C "$SRC" init -q
     git -C "$SRC" remote add origin "$KERNEL_REPO"
