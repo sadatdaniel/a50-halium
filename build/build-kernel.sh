@@ -40,6 +40,7 @@ JOBS=""                 # empty until the pin is read; see BUILD_JOBS below
 KEEP_SRC=0
 PROFILE=base
 FW_DIR=""
+APPARMOR=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -48,9 +49,25 @@ while [ $# -gt 0 ]; do
         --keep-src) KEEP_SRC=1; shift ;;
         --profile)  PROFILE="$2"; shift 2 ;;
         --firmware) FW_DIR="$2"; shift 2 ;;
+        --apparmor) APPARMOR="$2"; shift 2 ;;
         *) echo "E: unknown argument: $1" >&2; exit 2 ;;
     esac
 done
+
+# The AppArmor ladder (experiment 008's appendix). Each value is one rung and
+# changes the Image hash; the manifest records which rung was built. The
+# source tree caches the vendor build.sh, so switching rungs requires a clean
+# source volume - the checks below refuse rather than silently reuse.
+case "$APPARMOR" in
+    "") ;;
+    step1|step2)
+        [ -f "$REPO_ROOT/build/apply-apparmor-$APPARMOR.py" ] || {
+            echo "E: build/apply-apparmor-$APPARMOR.py is missing." >&2; exit 2; } ;;
+    *) echo "E: --apparmor must be step1 or step2, not '$APPARMOR'." >&2
+       echo "E: step1 = compiled in, SELinux stays default (a boot probe)." >&2
+       echo "E: step2 = step1 + AppArmor as the default LSM (the risky rung)." >&2
+       exit 2 ;;
+esac
 
 case "$PROFILE" in
     base) ;;
@@ -240,6 +257,19 @@ if [ "$PROFILE" = full ]; then
     python3 "$REPO_ROOT/build/apply-full-kconfig.py" "$SRC/build.sh" "$FIRMWARE"
 fi
 
+# --- AppArmor ladder rung (optional, experiment 008's appendix) ---------------
+# Same injection point as the full-profile Kconfig: the vendor build.sh's
+# generated config block. Each rung is a distinct kernel - recorded in the
+# manifest - and switching rungs on a reused source volume is refused above.
+if [ -n "$APPARMOR" ]; then
+    if grep -q "CONFIG_SECURITY_APPARMOR=y" "$SRC/build.sh" 2>/dev/null; then
+        echo "E: $SRC/build.sh already carries AppArmor options from an earlier run." >&2
+        echo "E: remove the source volume (docker volume rm a50-ksrc) to switch rungs." >&2
+        exit 1
+    fi
+    python3 "$REPO_ROOT/build/apply-apparmor-$APPARMOR.py" "$SRC/build.sh"
+fi
+
 # --- toolchain at the pinned commit ------------------------------------------
 # build.sh runs `git pull` on this directory when it already exists. Leaving it
 # on a DETACHED HEAD makes that pull fail harmlessly ("You are not currently on
@@ -327,6 +357,7 @@ toolchain_commit=$TOOLCHAIN_COMMIT
 build_device=$BUILD_DEVICE
 build_variant=$BUILD_VARIANT
 profile=$PROFILE
+apparmor=${APPARMOR:-no}
 patches=$(for p in $PATCH_LIST; do basename "$p"; done | tr "
 " " ")
 image_bytes=$IMAGE_SIZE

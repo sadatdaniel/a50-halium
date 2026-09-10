@@ -29,7 +29,7 @@ VERIFY AFTER FLASH:
 """
 import sys
 
-PATH = "kernel/src/build.sh"
+PATH = sys.argv[1] if len(sys.argv) > 1 else "kernel/src/build.sh"
 ANCHOR = '} >> "$BUILD_CONFIG_DIR/$BUILD_DEVICE_TMP_CONFIG"'
 
 OPTS = [
