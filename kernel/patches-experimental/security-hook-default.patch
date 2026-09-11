@@ -1,0 +1,27 @@
+From: sadatdaniel <sadatdaniel@gmail.com>
+Subject: [PATCH] security: preserve the default hook result after integrity checks
+
+Samsung's integrity check overwrites RC even when no LSM implements the
+requested hook. With AppArmor active, secid_to_secctx has no implementation
+in this tree: it falsely returns success instead of -EOPNOTSUPP, leaving
+SCM_SECURITY's context pointer and length unset. On the A50, journald then
+panics the kernel in hardened usercopy while receiving a Unix datagram.
+
+Restore the caller's default after a successful integrity check, as the
+upstream dispatcher preserves it for an empty hook list. Integrity failures
+and installed hooks retain their existing behavior. Do not weaken usercopy.
+
+Test: build/test-security-hook-default.py fails for the original dispatcher
+and passes after this change. Device boot validation remains pending.
+
+---
+--- a/security/security.c
++++ b/security/security.c
+@@ -217,6 +217,7 @@
+ 		RC = security_integrity_current();		\
+ 		if (RC != 0)							\
+ 			break;								\
++		RC = IRC;					\
+ 		list_for_each_entry(P, &security_hook_heads.FUNC, list) { \
+ 			RC = P->hook.FUNC(__VA_ARGS__);		\
+ 			if (RC != 0)				\
