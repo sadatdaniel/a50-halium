@@ -60,10 +60,10 @@ done
 # source volume - the checks below refuse rather than silently reuse.
 case "$APPARMOR" in
     "") ;;
-    step1|step2)
+    step1|step2|step3)
         [ -f "$REPO_ROOT/build/apply-apparmor-$APPARMOR.py" ] || {
             echo "E: build/apply-apparmor-$APPARMOR.py is missing." >&2; exit 2; } ;;
-    *) echo "E: --apparmor must be step1 or step2, not '$APPARMOR'." >&2
+    *) echo "E: --apparmor must be step1, step2 or step3, not '$APPARMOR'." >&2
        echo "E: step1 = compiled in, SELinux stays default (a boot probe)." >&2
        echo "E: step2 = step1 + AppArmor as the default LSM (the risky rung)." >&2
        exit 2 ;;
