@@ -151,4 +151,3 @@ and step 1 is now done.
 See docs/abox-freezer-isolation.md. The freezer isolation patch is opt-in via
 --abox-freezer-isolation; the QoS logging correction is parked separately.
 Neither is a demonstrated suspend fix.
-

@@ -39,3 +39,10 @@ non-freezer refusal, PREPARE/POST pairing, and unchanged default behavior.
 These tests do not validate hardware, concurrency, or a complete kernel build.
 Full build and controlled device test pending. Keep aa1 automatic restoration
 and image-sized read-back verification before any experimental boot.
+
+The isolated checks are in build/tests/test_abox_isolation.py and
+build/tests/test_abox_qos.py. Run inside a50-halium-build with preserved aa6
+mounted read-only at /ksrc and this repository at /port. The tests write only
+to /tmp. Use python3 /port/build/tests/test_abox_isolation.py (and the QoS
+script). The baseline source must be aa6, without the isolation patch applied.
+
