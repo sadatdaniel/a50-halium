@@ -1,0 +1,62 @@
+Subject: [PATCH] ASoC: samsung: abox: add opt-in freezer-only PM isolation
+
+Diagnostic experiment, not a suspend fix. The option is root-only and off
+by default. When enabled, reject every test level except TEST_FREEZER.
+Snapshot the decision across PREPARE/POST, including aborted suspend.
+Other PM notifiers and the task freezer remain active. Runtime PM is not
+blocked: logs must verify whether ABOX actually remained powered.
+
+--- a/sound/soc/samsung/abox/abox.c
++++ b/sound/soc/samsung/abox/abox.c
+@@ -24,6 +24,8 @@
+ #include <linux/smc.h>
+ #include <linux/delay.h>
+ #include <linux/suspend.h>
++/* Diagnostic build only: use the exact PM test enum, not a numeric copy. */
++#include "../../../../kernel/power/power.h"
+ #include <linux/sched/clock.h>
+ #include <linux/shm_ipc.h>
+ #include <linux/modem_notifier.h>
+@@ -5859,6 +5861,13 @@
+ 	return 0;
+ }
+ 
++/* Temporary isolation experiment; default behavior is unchanged. */
++static bool freezer_skip_pm;
++module_param(freezer_skip_pm, bool, 0600);
++MODULE_PARM_DESC(freezer_skip_pm,
++        "Diagnostic only: skip ABOX PM notifier for freezer test; reject deeper sleep");
++static bool freezer_skip_pm_active;
++
+ static int abox_pm_notifier(struct notifier_block *nb,
+ 		unsigned long action, void *nb_data)
+ {
+@@ -5870,6 +5879,16 @@
+ 
+ 	switch (action) {
+ 	case PM_SUSPEND_PREPARE:
++		freezer_skip_pm_active = false;
++		if (READ_ONCE(freezer_skip_pm)) {
++			if (pm_test_level != TEST_FREEZER) {
++				dev_warn(dev, "ABOX isolation: refusing non-freezer suspend\n");
++				return NOTIFY_BAD;
++			}
++			freezer_skip_pm_active = true;
++			dev_warn(dev, "ABOX isolation: skipping freezer PREPARE\n");
++			return NOTIFY_OK;
++		}
+ 		if (data->audio_mode != MODE_IN_CALL) {
+ 			enum calliope_state state;
+ 
+@@ -5919,6 +5938,11 @@
+ 		}
+ 		break;
+ 	case PM_POST_SUSPEND:
++		if (freezer_skip_pm_active) {
++			freezer_skip_pm_active = false;
++			dev_warn(dev, "ABOX isolation: skipping freezer POST\n");
++			return NOTIFY_OK;
++		}
+ 		if (abox_test_quirk(data, ABOX_QUIRK_OFF_ON_SUSPEND)) {
+ 			dev_info(dev, "(%d)r suspend_state: %d\n", __LINE__,
+ 					atomic_read(&data->suspend_state));

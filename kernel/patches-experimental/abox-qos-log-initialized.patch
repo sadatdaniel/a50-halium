@@ -1,0 +1,25 @@
+From: sadatdaniel <sadatdaniel@yahoo.com>
+Subject: [PATCH] ASoC: samsung: abox: initialize frequency before logging
+
+abox_change_cpu_gear logs freq even when the selected gear is unchanged.
+On that path freq has never been assigned. The aa6 suspend trace therefore
+prints req=1636958208kHz although no such QoS update occurred.
+
+Compute the selected frequency before the conditional update so unchanged
+requests are logged correctly. Keep the actual QoS update conditional.
+This is a diagnostic fix, not a demonstrated fix for the delayed freeze.
+
+--- a/sound/soc/samsung/abox/abox.c
++++ b/sound/soc/samsung/abox/abox.c
+@@ -3630,9 +3630,9 @@ static void abox_change_cpu_gear(struct device *dev, struct abox_data *data)
+ 		pm_runtime_get(dev);
+ 	}
+ 
++	freq = (gear <= ARRAY_SIZE(data->pm_qos_aud)) ?
++			data->pm_qos_aud[gear - 1] : 0;
+ 	if (data->cpu_gear != gear) {
+-		freq = (gear <= ARRAY_SIZE(data->pm_qos_aud)) ?
+-				data->pm_qos_aud[gear - 1] : 0;
+ 		pm_qos_update_request(&abox_pm_qos_aud, freq);
+ 	}
+ 

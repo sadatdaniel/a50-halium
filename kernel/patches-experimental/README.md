@@ -145,3 +145,10 @@ Android container `RUNNING`, Phosh active, stable minutes in.
 So removing the debug patch is safe, and this Bluetooth patch is the sole
 remaining explanation for the bootloop. The investigation steps above stand,
 and step 1 is now done.
+
+## Session 20 diagnostics
+
+See docs/abox-freezer-isolation.md. The freezer isolation patch is opt-in via
+--abox-freezer-isolation; the QoS logging correction is parked separately.
+Neither is a demonstrated suspend fix.
+

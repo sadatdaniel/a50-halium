@@ -41,6 +41,7 @@ KEEP_SRC=0
 PROFILE=base
 FW_DIR=""
 APPARMOR=""
+ABOX_FREEZER_ISOLATION=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -49,6 +50,7 @@ while [ $# -gt 0 ]; do
         --keep-src) KEEP_SRC=1; shift ;;
         --profile)  PROFILE="$2"; shift 2 ;;
         --firmware) FW_DIR="$2"; shift 2 ;;
+        --abox-freezer-isolation) ABOX_FREEZER_ISOLATION=1; shift ;;
         --apparmor) APPARMOR="$2"; shift 2 ;;
         *) echo "E: unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -234,9 +236,13 @@ if [ "$APPARMOR" = ubports ]; then
         PATCH_LIST="$PATCH_LIST $p"
     done
 fi
+if [ "$ABOX_FREEZER_ISOLATION" = 1 ]; then
+    PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/abox-freezer-isolation.patch"
+fi
 SENTINEL="$SRC/.a50-patched"
 PATCH_PROFILE="$PROFILE"
 [ "$APPARMOR" != ubports ] || PATCH_PROFILE="$PROFILE-apparmor-ubports"
+[ "$ABOX_FREEZER_ISOLATION" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-abox-freezer-isolation"
 if [ -e "$SENTINEL" ]; then
     was="$(cat "$SENTINEL" 2>/dev/null || echo unknown)"
     if [ "$was" != "$PATCH_PROFILE" ]; then
@@ -374,6 +380,7 @@ build_device=$BUILD_DEVICE
 build_variant=$BUILD_VARIANT
 profile=$PROFILE
 apparmor=${APPARMOR:-no}
+abox_freezer_isolation=$ABOX_FREEZER_ISOLATION
 patches=$(for p in $PATCH_LIST; do basename "$p"; done | tr "
 " " ")
 image_bytes=$IMAGE_SIZE
