@@ -60,10 +60,10 @@ done
 # source volume - the checks below refuse rather than silently reuse.
 case "$APPARMOR" in
     "") ;;
-    step1|step2|step3)
+    step1|step2|step3|ubports)
         [ -f "$REPO_ROOT/build/apply-apparmor-$APPARMOR.py" ] || {
             echo "E: build/apply-apparmor-$APPARMOR.py is missing." >&2; exit 2; } ;;
-    *) echo "E: --apparmor must be step1, step2 or step3, not '$APPARMOR'." >&2
+    *) echo "E: --apparmor must be step1, step2, step3 or ubports, not '$APPARMOR'." >&2
        echo "E: step1 = compiled in, SELinux stays default (a boot probe)." >&2
        echo "E: step2 = step1 + AppArmor as the default LSM (the risky rung)." >&2
        exit 2 ;;
@@ -227,21 +227,36 @@ fi
 # The sentinel records the profile. Without that, a source tree already
 # patched for `base` would be silently reused for a `full` build and produce a
 # kernel that is neither.
+if [ "$APPARMOR" = ubports ]; then
+    for name in apparmor-socket-mediation apparmor-unix-mediation; do
+        p="$REPO_ROOT/kernel/patches-experimental/$name.patch"
+        [ -f "$p" ] || { echo "E: missing patch: $p" >&2; exit 1; }
+        PATCH_LIST="$PATCH_LIST $p"
+    done
+fi
 SENTINEL="$SRC/.a50-patched"
+PATCH_PROFILE="$PROFILE"
+[ "$APPARMOR" != ubports ] || PATCH_PROFILE="$PROFILE-apparmor-ubports"
 if [ -e "$SENTINEL" ]; then
     was="$(cat "$SENTINEL" 2>/dev/null || echo unknown)"
-    if [ "$was" != "$PROFILE" ]; then
-        echo "E: $SRC is already patched for profile '$was', not '$PROFILE'." >&2
+    if [ "$was" != "$PATCH_PROFILE" ]; then
+        echo "E: $SRC is already patched for profile '$was', not '$PATCH_PROFILE'." >&2
         echo "E: delete it and re-run - patches cannot be un-applied reliably." >&2
         exit 1
     fi
-    echo "I: source already patched for profile '$PROFILE'"
+    echo "I: source already patched for profile '$PATCH_PROFILE'"
 else
     for p in $PATCH_LIST; do
         echo "I: applying $(basename "$p")"
-        git -C "$SRC" apply --whitespace=nowarn "$p"
+        if [ "$(basename "$p")" = apparmor-socket-mediation.patch ]; then
+            # The Samsung tree omits this upstream build-artifact ignore file.
+            # Keep the upstream patch intact; exclude only that metadata hunk.
+            git -C "$SRC" apply --whitespace=nowarn --exclude=security/apparmor/.gitignore "$p"
+        else
+            git -C "$SRC" apply --whitespace=nowarn "$p"
+        fi
     done
-    printf '%s' "$PROFILE" > "$SENTINEL"
+    printf '%s' "$PATCH_PROFILE" > "$SENTINEL"
 fi
 
 # --- full profile: firmware and the extra Kconfig ---------------------------

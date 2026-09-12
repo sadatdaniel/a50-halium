@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """AppArmor ladder, STEP 3a: select AppArmor at RUNTIME via the kernel cmdline.
 
-Step 2 (Kconfig default LSM) dies before the console comes up (~1.16 s,
-experiment 019) - a death so early it cannot be LSM-init logic (that would
-print), which points at the Kconfig change's link/layout side effects.
+Historical note: experiment 019's pre-console/layout diagnosis was disproven.
+Persisted logs showed AppArmor initialized, then journald panicked in usercopy
+because Samsung's empty LSM hooks lost their default return code. The full
+profile now fixes that with security-hook-default.patch; aa4 booted normally.
 This rung keeps the boot-tested step-1 config EXACTLY (SELinux stays the
 Kconfig default) and flips the same runtime variable - chosen_lsm - via
 
@@ -16,7 +17,7 @@ risk 2).
 
 Outcomes:
   boots + aa-status shows profiles -> the runtime selection works, the
-      step-2 death is a build/layout artifact; AppArmor is ON: verify
+      AppArmor is ON (this does not diagnose the earlier failure): verify
       media-hub stops crashing on openUri, the camera app's permission
       error clears, and the container still reaches sys.boot_completed=1
   dies pre-console like step 2 -> the selection LOGIC kills it at
