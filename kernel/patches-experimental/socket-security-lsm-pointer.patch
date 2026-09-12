@@ -1,0 +1,78 @@
+Subject: [PATCH] net: restore LSM-owned socket security allocation
+
+Samsung embedded SELinux socket state in struct sock and changed allocation,
+free and clone to match. UBports AppArmor socket mediation requires the generic
+LSM pointer contract. Restore the upstream v4.14 pointer, clone preservation,
+and SELinux allocation/free routines together. Keep Samsung's other hooks.
+
+Reference: https://github.com/torvalds/linux/tree/v4.14
+diff --git a/include/net/sock.h b/include/net/sock.h
+--- a/include/net/sock.h
++++ b/include/net/sock.h
+@@ -489,7 +489,7 @@
+ 	struct socket		*sk_socket;
+ 	void			*sk_user_data;
+ #ifdef CONFIG_SECURITY
+-	struct sk_security_struct	sk_security[1];
++	void			*sk_security;
+ #endif
+ 	struct sock_cgroup_data	sk_cgrp_data;
+ 	struct mem_cgroup	*sk_memcg;
+diff --git a/net/core/sock.c b/net/core/sock.c
+--- a/net/core/sock.c
++++ b/net/core/sock.c
+@@ -1548,8 +1548,7 @@
+ static void sock_copy(struct sock *nsk, const struct sock *osk)
+ {
+ #ifdef CONFIG_SECURITY_NETWORK
+-	struct sk_security_struct sksec;
+-	memcpy(&sksec, nsk->sk_security, sizeof(sksec));
++	void *sptr = nsk->sk_security;
+ #endif
+ 
+ 	memcpy(nsk, osk, offsetof(struct sock, sk_dontcopy_begin));
+@@ -1558,7 +1557,7 @@
+ 	       osk->sk_prot->obj_size - offsetof(struct sock, sk_dontcopy_end));
+ 
+ #ifdef CONFIG_SECURITY_NETWORK
+-	memcpy(nsk->sk_security, &sksec, sizeof(sksec));
++	nsk->sk_security = sptr;
+ 	security_sk_clone(osk, nsk);
+ #endif
+ }
+diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
+--- a/security/selinux/hooks.c
++++ b/security/selinux/hooks.c
+@@ -5227,15 +5227,17 @@
+ 
+ static int selinux_sk_alloc_security(struct sock *sk, int family, gfp_t priority)
+ {
+-	struct sk_security_struct *sksec = sk->sk_security;
+-
+-#ifdef CONFIG_NETLABEL
+-	memset(sksec, 0, offsetof(struct sk_security_struct, sid));
+-#endif
++	struct sk_security_struct *sksec;
++
++	sksec = kzalloc(sizeof(*sksec), priority);
++	if (!sksec)
++		return -ENOMEM;
++
+ 	sksec->peer_sid = SECINITSID_UNLABELED;
+ 	sksec->sid = SECINITSID_UNLABELED;
+ 	sksec->sclass = SECCLASS_SOCKET;
+ 	selinux_netlbl_sk_security_reset(sksec);
++	sk->sk_security = sksec;
+ 
+ 	return 0;
+ }
+@@ -5244,7 +5246,9 @@
+ {
+ 	struct sk_security_struct *sksec = sk->sk_security;
+ 
++	sk->sk_security = NULL;
+ 	selinux_netlbl_sk_security_free(sksec);
++	kfree(sksec);
+ }
+ 
+ static void selinux_sk_clone_security(const struct sock *sk, struct sock *newsk)

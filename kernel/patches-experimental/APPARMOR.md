@@ -16,7 +16,15 @@ Use a fresh source volume so earlier experiment images remain reproducible.
 
 The full profile also carries `security-hook-default.patch`, which corrects
 Samsung's empty LSM hook return and was boot-tested with AppArmor in aa4.
+The first full build exposed Samsung's inline SELinux socket storage. The
+`socket-security-lsm-pointer.patch` restores upstream v4.14's generic pointer,
+SELinux allocation/free and socket clone preservation together. It applies only
+in the `ubports` mode; the original probe artifacts remain reproducible. The
+SELinux structure definition is retained in Samsung's header, avoiding unrelated
+header changes. Searches found no directly reusable Samsung port patch; the
+replacement lifecycle functions come directly from Linux v4.14.
+
 Socket mediation and Kconfig default selection in this mode still require a
-separate build and device test. Loaded profiles alone do not establish complete
+successful build and device test. Loaded profiles alone do not establish complete
 Ubuntu Touch app confinement; test app launches and keyboard vibration as the
 guide describes before proceeding to camera/suspend tests.

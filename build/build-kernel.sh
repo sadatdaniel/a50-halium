@@ -228,7 +228,7 @@ fi
 # patched for `base` would be silently reused for a `full` build and produce a
 # kernel that is neither.
 if [ "$APPARMOR" = ubports ]; then
-    for name in apparmor-socket-mediation apparmor-unix-mediation; do
+    for name in apparmor-socket-mediation apparmor-unix-mediation socket-security-lsm-pointer; do
         p="$REPO_ROOT/kernel/patches-experimental/$name.patch"
         [ -f "$p" ] || { echo "E: missing patch: $p" >&2; exit 1; }
         PATCH_LIST="$PATCH_LIST $p"
