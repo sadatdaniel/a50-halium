@@ -43,6 +43,7 @@ FW_DIR=""
 APPARMOR=""
 ABOX_FREEZER_ISOLATION=0
 WATCHDOG_FREEZER_FIX=0
+USB_OTG_SLEEP_FIX=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -51,6 +52,7 @@ while [ $# -gt 0 ]; do
         --keep-src) KEEP_SRC=1; shift ;;
         --profile)  PROFILE="$2"; shift 2 ;;
         --firmware) FW_DIR="$2"; shift 2 ;;
+        --usb-otg-sleep-fix) USB_OTG_SLEEP_FIX=1; shift ;;
         --watchdog-freezer-fix) WATCHDOG_FREEZER_FIX=1; shift ;;
         --abox-freezer-isolation) ABOX_FREEZER_ISOLATION=1; shift ;;
         --apparmor) APPARMOR="$2"; shift 2 ;;
@@ -244,11 +246,15 @@ fi
 if [ "$WATCHDOG_FREEZER_FIX" = 1 ]; then
     PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/watchdog-freezer-preserve-state.patch"
 fi
+if [ "$USB_OTG_SLEEP_FIX" = 1 ]; then
+    PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/usb-otg-system-sleep.patch"
+fi
 SENTINEL="$SRC/.a50-patched"
 PATCH_PROFILE="$PROFILE"
 [ "$APPARMOR" != ubports ] || PATCH_PROFILE="$PROFILE-apparmor-ubports"
 [ "$ABOX_FREEZER_ISOLATION" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-abox-freezer-isolation"
 [ "$WATCHDOG_FREEZER_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-watchdog-freezer-fix"
+[ "$USB_OTG_SLEEP_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-usb-otg-sleep-fix"
 if [ -e "$SENTINEL" ]; then
     was="$(cat "$SENTINEL" 2>/dev/null || echo unknown)"
     if [ "$was" != "$PATCH_PROFILE" ]; then
@@ -388,6 +394,7 @@ profile=$PROFILE
 apparmor=${APPARMOR:-no}
 abox_freezer_isolation=$ABOX_FREEZER_ISOLATION
 watchdog_freezer_fix=$WATCHDOG_FREEZER_FIX
+usb_otg_sleep_fix=$USB_OTG_SLEEP_FIX
 patches=$(for p in $PATCH_LIST; do basename "$p"; done | tr "
 " " ")
 image_bytes=$IMAGE_SIZE
