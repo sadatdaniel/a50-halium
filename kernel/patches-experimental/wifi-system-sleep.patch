@@ -1,0 +1,154 @@
+Subject: [PATCH] wifi: scsc: prepare vendor sleep state from cfg80211 PM
+
+Experimental Linux PM bridge; restore the prior userspace sleep mode.
+
+--- a/drivers/net/wireless/scsc/ioctl.c
++++ b/drivers/net/wireless/scsc/ioctl.c
+@@ -319,26 +319,17 @@
+ 	slsi_mlme_set_multicast_ip(sdev, dev, multicast_ip_list, size);
+ }
+ 
+-static int slsi_set_suspend_mode(struct net_device *dev, char *command, int cmd_len)
++int slsi_set_host_suspend_mode(struct net_device *dev, int user_suspend_mode)
+ {
+ 	struct netdev_vif *netdev_vif = netdev_priv(dev);
+ 	struct slsi_dev   *sdev = netdev_vif->sdev;
+-	struct slsi_ioctl_args *ioctl_args = NULL;
+-	int               user_suspend_mode;
+ 	int               previous_suspend_mode;
+ 	u8                host_state;
+ 	int               ret = 0;
+ 	int vif;
+ 
+-	ioctl_args = slsi_get_private_command_args(command, cmd_len, 1);
+-	SLSI_VERIFY_IOCTL_ARGS(sdev, ioctl_args);
+-
+-	user_suspend_mode = *ioctl_args->args[0] - '0';
+-	if (user_suspend_mode != 0 && user_suspend_mode != 1) {
+-		SLSI_ERR(sdev, "Invalid value of user_suspend_mode %d\n", user_suspend_mode);
+-		kfree(ioctl_args);
+-		return -EINVAL;
+-	}
++	if (user_suspend_mode != 0 && user_suspend_mode != 1)
++		return -EINVAL;
+ 
+ 	SLSI_MUTEX_LOCK(sdev->device_config_mutex);
+ 	previous_suspend_mode = sdev->device_config.user_suspend_mode;
+@@ -393,7 +384,21 @@
+ 		SLSI_NET_ERR(dev, "Error in setting the Host State, ret=%d", ret);
+ 
+ 	SLSI_MUTEX_UNLOCK(sdev->device_config_mutex);
+-	kfree(ioctl_args);
++	return ret;
++}
++
++static int slsi_set_suspend_mode(struct net_device *dev, char *command, int cmd_len)
++{
++	struct netdev_vif *ndev_vif = netdev_priv(dev);
++	struct slsi_dev *sdev = ndev_vif->sdev;
++	struct slsi_ioctl_args *args;
++	int mode, ret;
++
++	args = slsi_get_private_command_args(command, cmd_len, 1);
++	SLSI_VERIFY_IOCTL_ARGS(sdev, args);
++	mode = *args->args[0] - '0';
++	ret = slsi_set_host_suspend_mode(dev, mode);
++	kfree(args);
+ 	return ret;
+ }
+ 
+--- a/drivers/net/wireless/scsc/ioctl.h
++++ b/drivers/net/wireless/scsc/ioctl.h
+@@ -16,6 +16,7 @@
+ 	int  total_len;
+ };
+ 
++int slsi_set_host_suspend_mode(struct net_device *dev, int mode);
+ int slsi_ioctl(struct net_device *dev, struct ifreq *rq, int cmd);
+ int slsi_get_sta_info(struct net_device *dev, char *command, int buf_len);
+ struct slsi_ioctl_args *slsi_get_private_command_args(char *buffer, int buf_len, int max_arg_count);
+--- a/drivers/net/wireless/scsc/dev.h
++++ b/drivers/net/wireless/scsc/dev.h
+@@ -1276,6 +1276,7 @@
+ 	u8                         netdev_addresses[CONFIG_SCSC_WLAN_MAX_INTERFACES + 1][ETH_ALEN];  /* 0 is reserved */
+ 	bool                       require_vif_delete[CONFIG_SCSC_WLAN_MAX_INTERFACES + 1];
+ 	int                        device_state;
++	bool                       system_sleep_wifi_prepared;
+ 
+ 	/* traffic mon */
+ 	u32				           agg_dev_throughput_tx;
+--- a/drivers/net/wireless/scsc/cfg80211_ops.c
++++ b/drivers/net/wireless/scsc/cfg80211_ops.c
+@@ -15,6 +15,7 @@
+ #include "netif.h"
+ #include "unifiio.h"
+ #include "mib.h"
++#include "ioctl.h"
+ 
+ #ifdef CONFIG_SCSC_WLAN_ANDROID
+ #include "scsc_wifilogger_rings.h"
+@@ -1891,20 +1892,57 @@
+ 
+ int slsi_suspend(struct wiphy *wiphy, struct cfg80211_wowlan *wow)
+ {
++	struct slsi_dev *sdev = SDEV_FROM_WIPHY(wiphy);
++	struct net_device *dev;
++	int previous, ret, restore_ret;
++
+ 	SLSI_UNUSED_PARAMETER(wow);
+-
++	/* A failed restoration must not silently become the next baseline. */
++	if (sdev->system_sleep_wifi_prepared)
++		return -EBUSY;
++	/* cfg80211 holds RTNL, keeping interface registration stable. */
++	dev = slsi_get_netdev(sdev, SLSI_NET_INDEX_WLAN);
++	if (!dev || !netif_running(dev) ||
++	    sdev->device_state != SLSI_DEVICE_STATE_STARTED)
++		return 0;
++
++	SLSI_MUTEX_LOCK(sdev->device_config_mutex);
++	previous = sdev->device_config.user_suspend_mode;
++	SLSI_MUTEX_UNLOCK(sdev->device_config_mutex);
++	/* Preserve an Android caller's already prepared sleep state. */
++	if (previous)
++		return 0;
++
++	ret = slsi_set_host_suspend_mode(dev, 1);
++	if (ret) {
++		/* This device's resume callback is not run if suspend fails. */
++		restore_ret = slsi_set_host_suspend_mode(dev, previous);
++		sdev->system_sleep_wifi_prepared = restore_ret != 0;
++		SLSI_ERR(sdev, "system sleep: Wi-Fi prepare=%d rollback=%d\n",
++			 ret, restore_ret);
++		return ret;
++	}
++	sdev->system_sleep_wifi_prepared = true;
++	SLSI_INFO(sdev, "system sleep: Wi-Fi prepared\n");
+ 	return 0;
+ }
+ 
+ int slsi_resume(struct wiphy *wiphy)
+ {
+ 	struct slsi_dev *sdev = SDEV_FROM_WIPHY(wiphy);
+-
+-	/* Scheduling the IO thread */
+-/*	(void)slsi_hip_run_bh(sdev); */
+-	SLSI_UNUSED_PARAMETER(sdev);
+-
+-	return 0;
++	struct net_device *dev;
++	int ret = 0;
++
++	if (!sdev->system_sleep_wifi_prepared)
++		return 0;
++	dev = slsi_get_netdev(sdev, SLSI_NET_INDEX_WLAN);
++	if (dev && netif_running(dev) &&
++	    sdev->device_state == SLSI_DEVICE_STATE_STARTED)
++		ret = slsi_set_host_suspend_mode(dev, 0);
++	if (!ret)
++		sdev->system_sleep_wifi_prepared = false;
++	SLSI_INFO(sdev, "system sleep: Wi-Fi restore=%d\n", ret);
++	return ret;
+ }
+ 
+ int slsi_set_pmksa(struct wiphy *wiphy, struct net_device *dev,

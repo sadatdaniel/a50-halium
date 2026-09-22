@@ -45,6 +45,7 @@ ABOX_FREEZER_ISOLATION=0
 WATCHDOG_FREEZER_FIX=0
 USB_OTG_SLEEP_FIX=0
 USB_OTG_CORE_REINIT=0
+WIFI_SLEEP_FIX=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -53,6 +54,7 @@ while [ $# -gt 0 ]; do
         --keep-src) KEEP_SRC=1; shift ;;
         --profile)  PROFILE="$2"; shift 2 ;;
         --firmware) FW_DIR="$2"; shift 2 ;;
+        --wifi-sleep-fix) WIFI_SLEEP_FIX=1; shift ;;
         --usb-otg-core-reinit) USB_OTG_CORE_REINIT=1; shift ;;
         --usb-otg-sleep-fix) USB_OTG_SLEEP_FIX=1; shift ;;
         --watchdog-freezer-fix) WATCHDOG_FREEZER_FIX=1; shift ;;
@@ -257,6 +259,9 @@ fi
 if [ "$USB_OTG_CORE_REINIT" = 1 ]; then
     PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/usb-otg-core-reinit.patch"
 fi
+if [ "$WIFI_SLEEP_FIX" = 1 ]; then
+    PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/wifi-system-sleep.patch"
+fi
 SENTINEL="$SRC/.a50-patched"
 PATCH_PROFILE="$PROFILE"
 [ "$APPARMOR" != ubports ] || PATCH_PROFILE="$PROFILE-apparmor-ubports"
@@ -264,6 +269,7 @@ PATCH_PROFILE="$PROFILE"
 [ "$WATCHDOG_FREEZER_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-watchdog-freezer-fix"
 [ "$USB_OTG_SLEEP_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-usb-otg-sleep-fix"
 [ "$USB_OTG_CORE_REINIT" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-usb-otg-core-reinit"
+[ "$WIFI_SLEEP_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-wifi-sleep-fix"
 if [ -e "$SENTINEL" ]; then
     was="$(cat "$SENTINEL" 2>/dev/null || echo unknown)"
     if [ "$was" != "$PATCH_PROFILE" ]; then
@@ -405,6 +411,7 @@ abox_freezer_isolation=$ABOX_FREEZER_ISOLATION
 watchdog_freezer_fix=$WATCHDOG_FREEZER_FIX
 usb_otg_sleep_fix=$USB_OTG_SLEEP_FIX
 usb_otg_core_reinit=$USB_OTG_CORE_REINIT
+wifi_sleep_fix=$WIFI_SLEEP_FIX
 patches=$(for p in $PATCH_LIST; do basename "$p"; done | tr "
 " " ")
 image_bytes=$IMAGE_SIZE
