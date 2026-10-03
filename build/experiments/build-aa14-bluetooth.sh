@@ -24,10 +24,17 @@ grep -q ' rfcomm_init$' System.map
 grep -q ' hidp_init$' System.map
 grep -q ' bnep_init$' System.map
 cp arch/arm64/boot/Image System.map /src/out-aa14-bluetooth/
-cp /src/out-aa13-usb-configfs/build-manifest.txt /src/out-aa14-bluetooth/build-manifest.txt
-printf '\nbluetooth_protocols=1\nincremental_parent=aa13\nconfig_sha256=%s\nimage_bytes=%s\n' \
-    "$(sha256sum .config | cut -d ' ' -f1)" "$(stat -c%s arch/arm64/boot/Image)" >> /src/out-aa14-bluetooth/build-manifest.txt
-sha256sum /src/kernel/patches-experimental/bluetooth-standard-protocols.patch >> /src/out-aa14-bluetooth/build-manifest.txt
+awk -F= '$1 !~ /^(incremental_parent|incremental_parent_built_utc|config_sha256|image_bytes|image_sha256|kernel_port_commit|built_utc)$/ {
+    if ($1 == "patches") $0 = $0 " usb-configfs-standard-linking.patch bluetooth-standard-protocols.patch";
+    print;
+}' /src/out-aa13-usb-configfs/build-manifest.txt > /src/out-aa14-bluetooth/build-manifest.txt
+printf '\nincremental_parent=aa13\nincremental_parent_built_utc=%s\nparent_image_sha256=%s\nbluetooth_protocols=1\nbluetooth_protocols_patch_sha256=%s\nconfig_sha256=%s\nimage_bytes=%s\nimage_sha256=%s\nkernel_port_commit=%s\nbuilt_utc=%s\n' \
+    "$(awk -F= '$1 == "built_utc" {print $2}' /src/out-aa13-usb-configfs/build-manifest.txt)" \
+    9ecb60339027e0024cfcded50eddd351c90a0d5fe17b4d06eb6fe70f93dd2840 \
+    "$(sha256sum /src/kernel/patches-experimental/bluetooth-standard-protocols.patch | cut -d ' ' -f1)" \
+    "$(sha256sum .config | cut -d ' ' -f1)" "$(stat -c%s arch/arm64/boot/Image)" \
+    "$(sha256sum arch/arm64/boot/Image | cut -d ' ' -f1)" \
+    "$(git -C /src rev-parse HEAD)" "$(date -u +%FT%TZ)" >> /src/out-aa14-bluetooth/build-manifest.txt
 printf '%s-bluetooth-protocols' "$parent" > .a50-patched
 cd /src/out-aa14-bluetooth
 sha256sum Image System.map | tee sha256sums.txt

@@ -35,3 +35,18 @@ System.map contains rfcomm_init, hidp_init and bnep_init; its SHA256 is
 77f283e0ee52e261495d3cad8170079f3565602a7ac8f7c56ff4c657b1601b5c.
 The image is an unflashed development candidate. The ordinary phone reboot
 requested for the separate Lomiri package fix still uses aa13.
+
+The aa14 Image was packed with the verified aa13 donor boot layout and unchanged
+ramdisk. boot-aa14.img is 55,984,128 bytes, leaving 1,687,552 bytes in the
+57,671,680-byte boot partition. SHA256:
+87840652ebd0ef31ad6cee77ee6e3d8236c25f533513ad3fdb454b52540e8bb4.
+The original aa13 ramdisk hash is unchanged:
+e78e8cb8d5269e81852a1b417d0b28c98f2c4bce8bcb035e2cab19bd9cfd9ac4.
+
+The first incremental manifest copied the parent image hash and duplicated its
+size/parent keys. Metadata is now canonical: child Image hash/size and aa13
+parent hash are separate; the patch list includes both USB configfs and
+Bluetooth restoration. The build script now emits those fields once, with
+its own source revision and build timestamp. This corrects metadata only;
+no binary was rebuilt or flashed. The exact child build time was not retained
+and is explicitly marked unknown, rather than copying aa13's timestamp.
