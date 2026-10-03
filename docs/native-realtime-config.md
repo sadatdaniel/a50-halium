@@ -30,3 +30,25 @@ Compilation and hardware validation are pending. Before release: verify RTKit
 can obtain normal scheduling, camera/audio, confinement, Bluetooth protocols,
 suspend/resume and Android service health on the new kernel. No candidate has
 been flashed, and no live scheduling policy was changed.
+
+
+The first aa15 compile passed the exact one-option config difference check,
+but failed in Samsung kernel/sched/rt.c: direct rt_rq->rq and the private
+entity_is_task macro access members absent without RT groups. The build was
+stopped; no new Image was produced or installed.
+
+Linux 4.14 already provides rq_of_rt_rq and rt_entity_is_task for both group
+configurations, and the same helpers are present in this Samsung tree.
+rt-standard-no-group-helpers.patch reuses them at the two failing call sites
+and deletes the unused duplicate macro. With groups enabled, the helpers use
+the same members; without groups, they use the existing container/task logic.
+There is no new scheduler implementation or dummy struct field. All callers
+of the duplicate macro were checked; the sole call is replaced.
+
+Patch application passed on the exact source blob
+a35d675109819a6b11f740fec2f71025910279dd, producing
+cbeb3bef0d66625a1ee0667a501e92217715af35. The normal full profile includes this
+compatibility correction and its updated sentinel rejects older cached trees.
+The guarded incremental script's --resume accepts only the recorded failed
+candidate's config/build block and verified parent; it can then resume with
+the focused helper correction. Hardware scheduling behavior remains untested.

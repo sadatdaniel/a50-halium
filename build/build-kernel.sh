@@ -103,7 +103,7 @@ esac
 # The five extra patches of the full profile, in the order they are applied.
 # Order is part of the artifact: changing it changes the Image hash.
 EXTRA_PATCHES="misc-open-scope-and-tracing abox-fixup-helper-dai-guard \
-bluetooth-linux-stack bluetooth-hci-sock-restore decon-force-mask-layer \
+bluetooth-linux-stack bluetooth-hci-sock-restore decon-force-mask-layer rt-standard-no-group-helpers \
 fimc-is-clear-vctx-on-close fimc-is-sensor-open-race fimc-is-group-stop-semaphore \
 security-hook-default"
 
@@ -277,7 +277,7 @@ if [ "$BLUETOOTH_PROTOCOLS" = 1 ]; then
 fi
 SENTINEL="$SRC/.a50-patched"
 PATCH_PROFILE="$PROFILE"
-[ "$PROFILE" != full ] || PATCH_PROFILE=full-native-realtime
+[ "$PROFILE" != full ] || PATCH_PROFILE=full-native-realtime-helpers
 [ "$APPARMOR" != ubports ] || PATCH_PROFILE="$PROFILE-apparmor-ubports"
 [ "$ABOX_FREEZER_ISOLATION" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-abox-freezer-isolation"
 [ "$WATCHDOG_FREEZER_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-watchdog-freezer-fix"
