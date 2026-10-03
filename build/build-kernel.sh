@@ -47,6 +47,7 @@ USB_OTG_SLEEP_FIX=0
 USB_OTG_CORE_REINIT=0
 WIFI_SLEEP_FIX=0
 USB_CONFIGFS_FIX=0
+BLUETOOTH_PROTOCOLS=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -55,6 +56,7 @@ while [ $# -gt 0 ]; do
         --keep-src) KEEP_SRC=1; shift ;;
         --profile)  PROFILE="$2"; shift 2 ;;
         --firmware) FW_DIR="$2"; shift 2 ;;
+        --bluetooth-protocols) BLUETOOTH_PROTOCOLS=1; shift ;;
         --usb-configfs-fix) USB_CONFIGFS_FIX=1; shift ;;
         --wifi-sleep-fix) WIFI_SLEEP_FIX=1; shift ;;
         --usb-otg-core-reinit) USB_OTG_CORE_REINIT=1; shift ;;
@@ -94,6 +96,9 @@ case "$PROFILE" in
               exit 2; } ;;
     *)    echo "E: --profile must be 'base' or 'full', not '$PROFILE'" >&2; exit 2 ;;
 esac
+
+[ "$BLUETOOTH_PROTOCOLS" = 0 ] || [ "$PROFILE" = full ] || {
+    echo 'E: --bluetooth-protocols requires the full Bluetooth configuration.' >&2; exit 2; }
 
 # The five extra patches of the full profile, in the order they are applied.
 # Order is part of the artifact: changing it changes the Image hash.
@@ -267,6 +272,9 @@ fi
 if [ "$USB_CONFIGFS_FIX" = 1 ]; then
     PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/usb-configfs-standard-linking.patch"
 fi
+if [ "$BLUETOOTH_PROTOCOLS" = 1 ]; then
+    PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/bluetooth-standard-protocols.patch"
+fi
 SENTINEL="$SRC/.a50-patched"
 PATCH_PROFILE="$PROFILE"
 [ "$APPARMOR" != ubports ] || PATCH_PROFILE="$PROFILE-apparmor-ubports"
@@ -276,6 +284,7 @@ PATCH_PROFILE="$PROFILE"
 [ "$USB_OTG_CORE_REINIT" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-usb-otg-core-reinit"
 [ "$WIFI_SLEEP_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-wifi-sleep-fix"
 [ "$USB_CONFIGFS_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-usb-configfs-fix"
+[ "$BLUETOOTH_PROTOCOLS" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-bluetooth-protocols"
 if [ -e "$SENTINEL" ]; then
     was="$(cat "$SENTINEL" 2>/dev/null || echo unknown)"
     if [ "$was" != "$PATCH_PROFILE" ]; then
@@ -419,6 +428,7 @@ usb_otg_sleep_fix=$USB_OTG_SLEEP_FIX
 usb_otg_core_reinit=$USB_OTG_CORE_REINIT
 wifi_sleep_fix=$WIFI_SLEEP_FIX
 usb_configfs_fix=$USB_CONFIGFS_FIX
+bluetooth_protocols=$BLUETOOTH_PROTOCOLS
 patches=$(for p in $PATCH_LIST; do basename "$p"; done | tr "
 " " ")
 image_bytes=$IMAGE_SIZE
