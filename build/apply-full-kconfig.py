@@ -16,6 +16,7 @@ s = open(path).read()
 anchor = '} >> "$BUILD_CONFIG_DIR/$BUILD_DEVICE_TMP_CONFIG"'
 
 if "CONFIG_EXTRA_FIRMWARE=" in s:
+    assert 'echo "# CONFIG_RT_GROUP_SCHED is not set"' in s, "Old full-profile configuration: use a fresh source tree"
     print("I: build.sh already carries the full-profile Kconfig")
     raise SystemExit
 
@@ -24,6 +25,8 @@ assert s.count(anchor) == 1, "anchor found %d times" % s.count(anchor)
 add = (
     '    echo \'CONFIG_EXTRA_FIRMWARE="%s"\'\n'
     '    echo \'CONFIG_EXTRA_FIRMWARE_DIR="firmware"\'\n'
+    # Required by systemd and Halium: zero RT cgroup budgets reject RTKit.
+    '    echo "# CONFIG_RT_GROUP_SCHED is not set"\n'
     '    echo "CONFIG_RFKILL=y"\n'
     '    echo "CONFIG_RFKILL_INPUT=y"\n'
     # Suspend crashes this device: `echo mem > /sys/power/state` kills it with

@@ -277,6 +277,7 @@ if [ "$BLUETOOTH_PROTOCOLS" = 1 ]; then
 fi
 SENTINEL="$SRC/.a50-patched"
 PATCH_PROFILE="$PROFILE"
+[ "$PROFILE" != full ] || PATCH_PROFILE=full-native-realtime
 [ "$APPARMOR" != ubports ] || PATCH_PROFILE="$PROFILE-apparmor-ubports"
 [ "$ABOX_FREEZER_ISOLATION" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-abox-freezer-isolation"
 [ "$WATCHDOG_FREEZER_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-watchdog-freezer-fix"
@@ -387,6 +388,12 @@ cd "$SRC"
 export JOBS
 ./build.sh -d "$BUILD_DEVICE" -v "$BUILD_VARIANT"
 
+if [ "$PROFILE" = full ]; then
+    grep -qx '# CONFIG_RT_GROUP_SCHED is not set' "$SRC/.config" || {
+        echo 'E: full profile must disable realtime cgroup scheduling for systemd/Halium.' >&2; exit 1;
+    }
+fi
+
 # --- collect and check --------------------------------------------------------
 # `build.sh -v recovery` produces out/Image and nothing else. Assembling a
 # bootable image from it needs an initramfs, which is distro-specific and
@@ -429,6 +436,7 @@ usb_otg_core_reinit=$USB_OTG_CORE_REINIT
 wifi_sleep_fix=$WIFI_SLEEP_FIX
 usb_configfs_fix=$USB_CONFIGFS_FIX
 bluetooth_protocols=$BLUETOOTH_PROTOCOLS
+rt_group_sched=$(if grep -q "^CONFIG_RT_GROUP_SCHED=y$" "$SRC/.config"; then echo y; else echo n; fi)
 patches=$(for p in $PATCH_LIST; do basename "$p"; done | tr "
 " " ")
 image_bytes=$IMAGE_SIZE
