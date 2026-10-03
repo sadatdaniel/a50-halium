@@ -27,3 +27,11 @@ and confinement. Missing RFCOMM alone does not prove the user's keyboard
 disconnect root cause; HIDP/UHID transport and connection logs still matter.
 Do not advertise Bluetooth stability from compilation or socket creation.
 No Bluetooth bridge, pairing data, vendor firmware or calibration is changed.
+
+The aa14 incremental build completed successfully. The unchanged .config
+hash is 57f003bc5635e95e56f961f42c9b47054503d55874f0005ca6ccc6cef3751741.
+Image SHA256 is 264b91035a1f69989a7e911f339294dd6932622cbdd91cc854b445dd40d4c302.
+System.map contains rfcomm_init, hidp_init and bnep_init; its SHA256 is
+77f283e0ee52e261495d3cad8170079f3565602a7ac8f7c56ff4c657b1601b5c.
+The image is an unflashed development candidate. The ordinary phone reboot
+requested for the separate Lomiri package fix still uses aa13.
