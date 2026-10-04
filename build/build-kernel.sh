@@ -48,6 +48,7 @@ USB_OTG_CORE_REINIT=0
 WIFI_SLEEP_FIX=0
 USB_CONFIGFS_FIX=0
 BLUETOOTH_PROTOCOLS=0
+USB_SUPPLY_EVENTS=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -57,6 +58,7 @@ while [ $# -gt 0 ]; do
         --profile)  PROFILE="$2"; shift 2 ;;
         --firmware) FW_DIR="$2"; shift 2 ;;
         --bluetooth-protocols) BLUETOOTH_PROTOCOLS=1; shift ;;
+        --usb-supply-events) USB_SUPPLY_EVENTS=1; shift ;;
         --usb-configfs-fix) USB_CONFIGFS_FIX=1; shift ;;
         --wifi-sleep-fix) WIFI_SLEEP_FIX=1; shift ;;
         --usb-otg-core-reinit) USB_OTG_CORE_REINIT=1; shift ;;
@@ -275,10 +277,13 @@ fi
 if [ "$BLUETOOTH_PROTOCOLS" = 1 ]; then
     PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/bluetooth-standard-protocols.patch"
 fi
+if [ "$USB_SUPPLY_EVENTS" = 1 ]; then
+    PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/usb-supply-cable-events.patch"
+fi
 SENTINEL="$SRC/.a50-patched"
 PATCH_PROFILE="$PROFILE"
 [ "$PROFILE" != full ] || PATCH_PROFILE=full-native-realtime-helpers
-[ "$APPARMOR" != ubports ] || PATCH_PROFILE="$PROFILE-apparmor-ubports"
+[ "$APPARMOR" != ubports ] || PATCH_PROFILE="$PATCH_PROFILE-apparmor-ubports"
 [ "$ABOX_FREEZER_ISOLATION" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-abox-freezer-isolation"
 [ "$WATCHDOG_FREEZER_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-watchdog-freezer-fix"
 [ "$USB_OTG_SLEEP_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-usb-otg-sleep-fix"
@@ -286,6 +291,7 @@ PATCH_PROFILE="$PROFILE"
 [ "$WIFI_SLEEP_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-wifi-sleep-fix"
 [ "$USB_CONFIGFS_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-usb-configfs-fix"
 [ "$BLUETOOTH_PROTOCOLS" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-bluetooth-protocols"
+[ "$USB_SUPPLY_EVENTS" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-usb-supply-events"
 if [ -e "$SENTINEL" ]; then
     was="$(cat "$SENTINEL" 2>/dev/null || echo unknown)"
     if [ "$was" != "$PATCH_PROFILE" ]; then
@@ -436,6 +442,7 @@ usb_otg_core_reinit=$USB_OTG_CORE_REINIT
 wifi_sleep_fix=$WIFI_SLEEP_FIX
 usb_configfs_fix=$USB_CONFIGFS_FIX
 bluetooth_protocols=$BLUETOOTH_PROTOCOLS
+usb_supply_events=$USB_SUPPLY_EVENTS
 rt_group_sched=$(if grep -q "^CONFIG_RT_GROUP_SCHED=y$" "$SRC/.config"; then echo y; else echo n; fi)
 patches=$(for p in $PATCH_LIST; do basename "$p"; done | tr "
 " " ")

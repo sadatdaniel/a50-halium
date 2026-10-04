@@ -1,0 +1,10 @@
+--- a/drivers/battery_v2/sec_battery.c
++++ b/drivers/battery_v2/sec_battery.c
+@@ -4635,6 +4635,7 @@
+ 
+ 	wake_lock_stock(&battery->monitor_wake_lock);
+ 	queue_delayed_work(battery->monitor_wqueue, &battery->monitor_work, 0);
++	power_supply_changed(battery->psy_usb);
+ end_of_cable_work:
+ 	wake_unlock(&battery->cable_wake_lock);
+ 	dev_info(battery->dev, "%s: End\n", __func__);
