@@ -70,3 +70,17 @@ beside the phone before the controlled test in case recovery is needed.
 Vendor SHA256: 48f5e9bfb9ef2dfd032ec7c92986ac1c8886abe7d658430b57ccacb5e3cffe3b.
 Recovery SHA256: 8535a9d9193243412fcefc0e6f1ba585d60e1533e65069867444a49d0287e51f.
 These guards describe this test phone; do not assume them for another installation.
+
+## aa16 hardware result (supersedes candidate-only notes above)
+
+The controlled boot passed on 4 October. Actual AppArmor allow/deny enforcement
+and RFCOMM socket creation passed; RTKit now grants audio realtime priority 5.
+The owner confirmed screen/touch. Root read-only, protected partitions unchanged.
+Native awake cable testing produced USB ONLINE 1 -> 0 -> 1 kernel/udev events
+and normal adbd removal/restart. The notification correction therefore worked.
+USB still failed to enumerate until Developer Mode was toggled: Samsung DWC3
+discarded pullup(0) while runtime-suspended, leaving stale softconnect state.
+See [the isolated ordering correction](usb-pullup-state.md). Native detection
+is not yet selected permanently; runtime configuration was removed at 09:12:13
+Berlin, its hold/collector stopped and the expected stopped collector status
+cleared after inspection. Current phone subsequently booted aa17.

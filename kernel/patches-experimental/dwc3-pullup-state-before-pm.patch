@@ -1,0 +1,25 @@
+--- a/drivers/usb/dwc3/gadget.c
++++ b/drivers/usb/dwc3/gadget.c
+@@ -2223,9 +2223,6 @@
+ 	struct usb_otg		*otg = &(dwc->dotg->otg);
+ 	int			ret;
+ 
+-	if (pm_runtime_suspended(dwc->dev))
+-		return 0;
+-
+ 	is_on = !!is_on;
+ 
+ 	spin_lock_irqsave(&dwc->lock, flags);
+@@ -2241,9 +2238,10 @@
+ 
+ 	dwc->softconnect = is_on;
+ 
+-	if (dwc->dotg && !dwc->vbus_session) {
++	if (pm_runtime_suspended(dwc->dev) ||
++	    (dwc->dotg && !dwc->vbus_session)) {
+ 		spin_unlock_irqrestore(&dwc->lock, flags);
+-		/* Need to wait for vbus_session(on) from otg driver */
++		/* Keep pullup intent while the controller is powered off. */
+ 		return 0;
+ 	}
+ 

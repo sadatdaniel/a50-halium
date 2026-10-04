@@ -50,3 +50,10 @@ Bluetooth restoration. The build script now emits those fields once, with
 its own source revision and build timestamp. This corrects metadata only;
 no binary was rebuilt or flashed. The exact child build time was not retained
 and is explicitly marked unknown, rather than copying aa13's timestamp.
+
+## Runtime availability through aa16
+
+4 October: the aa16 descendant boot successfully creates real RFCOMM and L2CAP
+sockets. This supersedes aa13's RFCOMM errno 93 and the unflashed-only state
+above. aa17 retains the same configuration. Actual keyboard typing, idle,
+reconnect and suspend tests remain; no keyboard stability claim yet.

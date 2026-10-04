@@ -84,3 +84,13 @@ candidate was flashed: the connected phone still runs aa13. Successful
 compilation and partition fit do not prove scheduler, Bluetooth or suspend
 behavior. Validate those on hardware before selecting a release kernel, then
 reproduce with the normal full build from clean source.
+
+## Hardware check through aa16 and aa17
+
+4 October: these descendant kernels include the exact aa15 configuration.
+Both boots report successful RTKit scheduling of three PulseAudio threads at
+priority 5, where aa13 failed with EPERM. AppArmor enforcement passed on aa16;
+aa17 boots enabled, with read-only root and user-confirmed display/touch.
+This validates normal scheduling availability. Broader media/call/keyboard,
+sleep and clean-release reproduction checks remain; compilation-only notes
+above are historical.

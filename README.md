@@ -426,3 +426,23 @@ The kernel source is GPL-2.0, as upstream. The scripts and documentation here
 are offered under the same terms so the whole thing stays one coherent,
 redistributable unit. No proprietary vendor blobs are committed — only the means
 to extract them from your own device.
+
+## Current experimental Ubuntu Touch kernel (4 October 2026)
+
+The older profile/artifact tables above are baseline history. The aa17 candidate
+includes full-profile native realtime scheduling and these explicit options:
+
+```sh
+./build/build-kernel.sh --profile full --firmware /fw --apparmor ubports \
+  --watchdog-freezer-fix --usb-otg-sleep-fix --usb-otg-core-reinit \
+  --wifi-sleep-fix --usb-configfs-fix --bluetooth-protocols \
+  --usb-supply-events --usb-pullup-state-fix --out /src/out-candidate
+```
+
+Use a fresh Linux source volume; do not mix old cache sentinels. Guarded
+incremental reproduction and actual hardware evidence are in
+[USB pull-up state](docs/usb-pullup-state.md). aa17 boot is confirmed, as are
+three native awake USB reconnects, four real deep cycles with automatic USB
+recovery, actual AppArmor enforcement and normal realtime scheduling. Complete
+clean reproduction, all USB modes, keyboard and release-image checks remain.
+No new release artifact or stability claim is made from this development test.
