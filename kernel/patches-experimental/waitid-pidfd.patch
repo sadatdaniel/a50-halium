@@ -1,0 +1,60 @@
+From: Ubuntu Touch A50 port
+Subject: [PATCH] waitid: complete existing pidfd backport
+
+Upstream: 3695eae5fee0605f316fbaad0b9e3de791d7dfaf
+https://github.com/torvalds/linux/commit/3695eae5fee0605f316fbaad0b9e3de791d7dfaf
+Reference for the already-backported two-argument helper / nonblocking flags:
+https://github.com/torvalds/linux/blob/v5.10/kernel/exit.c
+
+This tree already has P_PIDFD, pidfd_get_pid(fd, flags), pidfd_open and
+working exit polling. Its kernel_waitid omits the P_PIDFD case. GLib gets
+a valid descriptor then returns an unknown child status after EINVAL.
+Add the upstream wait case and nonblocking semantics, preserving existing
+P_PID / P_PGID behavior and the normal parent-child permission checks.
+No change to SO_PEERPIDFD or the installed authentication configuration.
+
+--- a/kernel/exit.c
++++ b/kernel/exit.c
+@@ -1574,6 +1574,7 @@
+ 	struct pid *pid = NULL;
+ 	enum pid_type type;
+ 	long ret;
++	unsigned int f_flags = 0;
+ 
+ 	if (options & ~(WNOHANG|WNOWAIT|WEXITED|WSTOPPED|WCONTINUED|
+ 			__WNOTHREAD|__WCLONE|__WALL))
+@@ -1595,11 +1596,20 @@
+ 		if (upid <= 0)
+ 			return -EINVAL;
+ 		break;
++	case P_PIDFD:
++		type = PIDTYPE_PID;
++		if (upid < 0)
++			return -EINVAL;
++
++		pid = pidfd_get_pid(upid, &f_flags);
++		if (IS_ERR(pid))
++			return PTR_ERR(pid);
++		break;
+ 	default:
+ 		return -EINVAL;
+ 	}
+ 
+-	if (type < PIDTYPE_MAX)
++	if (!pid && type < PIDTYPE_MAX)
+ 		pid = find_get_pid(upid);
+ 
+ 	wo.wo_type	= type;
+@@ -1607,7 +1617,12 @@
+ 	wo.wo_flags	= options;
+ 	wo.wo_info	= infop;
+ 	wo.wo_rusage	= ru;
++	if (f_flags & O_NONBLOCK)
++		wo.wo_flags |= WNOHANG;
++
+ 	ret = do_wait(&wo);
++	if (!ret && !(options & WNOHANG) && (f_flags & O_NONBLOCK))
++		ret = -EAGAIN;
+ 
+ 	put_pid(pid);
+ 	return ret;

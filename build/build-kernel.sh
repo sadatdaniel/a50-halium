@@ -50,6 +50,7 @@ USB_CONFIGFS_FIX=0
 BLUETOOTH_PROTOCOLS=0
 USB_SUPPLY_EVENTS=0
 USB_PULLUP_STATE_FIX=0
+PIDFD_WAIT=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -61,6 +62,7 @@ while [ $# -gt 0 ]; do
         --bluetooth-protocols) BLUETOOTH_PROTOCOLS=1; shift ;;
         --usb-supply-events) USB_SUPPLY_EVENTS=1; shift ;;
         --usb-pullup-state-fix) USB_PULLUP_STATE_FIX=1; shift ;;
+        --pidfd-wait) PIDFD_WAIT=1; shift ;;
         --usb-configfs-fix) USB_CONFIGFS_FIX=1; shift ;;
         --wifi-sleep-fix) WIFI_SLEEP_FIX=1; shift ;;
         --usb-otg-core-reinit) USB_OTG_CORE_REINIT=1; shift ;;
@@ -285,6 +287,9 @@ fi
 if [ "$USB_PULLUP_STATE_FIX" = 1 ]; then
     PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/dwc3-pullup-state-before-pm.patch"
 fi
+if [ "$PIDFD_WAIT" = 1 ]; then
+    PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/waitid-pidfd.patch"
+fi
 SENTINEL="$SRC/.a50-patched"
 PATCH_PROFILE="$PROFILE"
 [ "$PROFILE" != full ] || PATCH_PROFILE=full-native-realtime-helpers
@@ -298,6 +303,7 @@ PATCH_PROFILE="$PROFILE"
 [ "$BLUETOOTH_PROTOCOLS" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-bluetooth-protocols"
 [ "$USB_SUPPLY_EVENTS" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-usb-supply-events"
 [ "$USB_PULLUP_STATE_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-usb-pullup-state-fix"
+[ "$PIDFD_WAIT" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-pidfd-wait"
 if [ -e "$SENTINEL" ]; then
     was="$(cat "$SENTINEL" 2>/dev/null || echo unknown)"
     if [ "$was" != "$PATCH_PROFILE" ]; then
@@ -450,6 +456,7 @@ usb_configfs_fix=$USB_CONFIGFS_FIX
 bluetooth_protocols=$BLUETOOTH_PROTOCOLS
 usb_supply_events=$USB_SUPPLY_EVENTS
 usb_pullup_state_fix=$USB_PULLUP_STATE_FIX
+pidfd_wait=$PIDFD_WAIT
 rt_group_sched=$(if grep -q "^CONFIG_RT_GROUP_SCHED=y$" "$SRC/.config"; then echo y; else echo n; fi)
 patches=$(for p in $PATCH_LIST; do basename "$p"; done | tr "
 " " ")
