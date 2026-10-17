@@ -73,6 +73,8 @@ jobs:
             out/Image
             out/sha256sums.txt
             out/build-manifest.txt
+            out/kernel.config
+            out/System.map
           retention-days: 30
 
       # A tag publishes the same artifacts as a release, so a flashable image
