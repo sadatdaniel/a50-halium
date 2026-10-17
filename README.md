@@ -446,3 +446,12 @@ three native awake USB reconnects, four real deep cycles with automatic USB
 recovery, actual AppArmor enforcement and normal realtime scheduling. Complete
 clean reproduction, all USB modes, keyboard and release-image checks remain.
 No new release artifact or stability claim is made from this development test.
+
+**Status 17 October 2026:** aa17 has run on the phone for over 6 days (one boot)
+without kernel faults seen in the retained logs. aa18 (upstream pidfd wait
+completion, [pidfd-wait](docs/pidfd-wait.md)) is built but **unflashed**. Every
+build output aa1–aa18 is archived in release
+[`kernel-builds-20261017`](https://github.com/sadatdaniel/a50-halium/releases/tag/kernel-builds-20261017)
+(aa17 `boot-aa17.img` `a413d2bc…`, aa18 `81f172fe…`). aa13 onwards are
+incremental on their parent, so restore the chain from that release. Port-side
+current state: [a50-ubuntu-touch handoff 22](https://github.com/sadatdaniel/a50-ubuntu-touch/blob/main/docs/SESSION-HANDOFF-22.md).
