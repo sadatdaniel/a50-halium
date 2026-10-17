@@ -18,6 +18,11 @@ on:
       - 'build/**'
       - '.github/workflows/kernel.yml'
   workflow_dispatch:
+    inputs:
+      args:
+        description: Extra build-kernel.sh options (non-default builds skip the hash gate)
+        type: string
+        default: ''
 
 jobs:
   build:
@@ -42,7 +47,7 @@ jobs:
           docker run --rm \
             -v "$PWD:/src" -w /src \
             a50-halium-build \
-            ./build/build-kernel.sh
+            ./build/build-kernel.sh ${{ inputs.args }}
 
       - name: Report what was produced
         run: cat out/build-manifest.txt out/sha256sums.txt
@@ -53,6 +58,7 @@ jobs:
       # and the expected file has to be updated deliberately - with a rebuild
       # and a boot test behind it, not silently.
       - name: Verify artifacts match the recorded hashes
+        if: inputs.args == '' || inputs.args == null
         run: |
           if [ ! -f kernel/expected-artifacts.sha256 ]; then
             echo "::warning::No kernel/expected-artifacts.sha256 recorded yet - the build is not gated."

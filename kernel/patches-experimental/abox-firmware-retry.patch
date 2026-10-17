@@ -1,0 +1,58 @@
+--- a/sound/soc/samsung/abox/abox.c
++++ b/sound/soc/samsung/abox/abox.c
+@@ -5348,6 +5348,18 @@
+ 	return ret;
+ }
+ 
++/*
++ * The firmware is on the vendor partition (firmware_class.path), which is
++ * mounted seconds after this first request at ~1.4 s. Retry a direct load
++ * instead of leaving the DSP in reset for the rest of the boot.
++ */
++#define ABOX_FW_RETRY_MS	1000
++#define ABOX_FW_RETRY_MAX	120
++static struct platform_device *abox_fw_retry_pdev;
++static int abox_fw_retries;
++static void abox_retry_sram_firmware(struct work_struct *work);
++static DECLARE_DELAYED_WORK(abox_fw_retry_work, abox_retry_sram_firmware);
++
+ static void abox_complete_sram_firmware_request(const struct firmware *fw,
+ 		void *context)
+ {
+@@ -5356,9 +5368,19 @@
+ 	struct abox_data *data = platform_get_drvdata(pdev);
+ 
+ 	if (!fw) {
++		if (abox_fw_retries < ABOX_FW_RETRY_MAX) {
++			abox_fw_retries++;
++			abox_fw_retry_pdev = pdev;
++			schedule_delayed_work(&abox_fw_retry_work,
++					msecs_to_jiffies(ABOX_FW_RETRY_MS));
++			return;
++		}
+ 		dev_err(dev, "Failed to request firmware\n");
+ 		return;
+ 	}
++	if (abox_fw_retries)
++		dev_info(dev, "SRAM firmware found after %d retries\n",
++				abox_fw_retries);
+ 
+ 	if (data->firmware_sram)
+ 		release_firmware(data->firmware_sram);
+@@ -5375,6 +5397,16 @@
+ 			abox_enable(dev);
+ }
+ 
++static void abox_retry_sram_firmware(struct work_struct *work)
++{
++	struct platform_device *pdev = abox_fw_retry_pdev;
++	const struct firmware *fw = NULL;
++
++	if (request_firmware_direct(&fw, "calliope_sram.bin", &pdev->dev))
++		fw = NULL;
++	abox_complete_sram_firmware_request(fw, pdev);
++}
++
+ static int abox_download_firmware(struct platform_device *pdev)
+ {
+ 	struct abox_data *data = platform_get_drvdata(pdev);

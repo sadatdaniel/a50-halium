@@ -51,6 +51,7 @@ BLUETOOTH_PROTOCOLS=0
 USB_SUPPLY_EVENTS=0
 USB_PULLUP_STATE_FIX=0
 PIDFD_WAIT=0
+RUNTIME_FIRMWARE=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -63,6 +64,7 @@ while [ $# -gt 0 ]; do
         --usb-supply-events) USB_SUPPLY_EVENTS=1; shift ;;
         --usb-pullup-state-fix) USB_PULLUP_STATE_FIX=1; shift ;;
         --pidfd-wait) PIDFD_WAIT=1; shift ;;
+        --runtime-firmware) RUNTIME_FIRMWARE=1; shift ;;
         --usb-configfs-fix) USB_CONFIGFS_FIX=1; shift ;;
         --wifi-sleep-fix) WIFI_SLEEP_FIX=1; shift ;;
         --usb-otg-core-reinit) USB_OTG_CORE_REINIT=1; shift ;;
@@ -94,7 +96,7 @@ esac
 
 case "$PROFILE" in
     base) ;;
-    full) [ -n "$FW_DIR" ] || {
+    full) [ -n "$FW_DIR" ] || [ "$RUNTIME_FIRMWARE" = 1 ] || {
               echo "E: --profile full needs --firmware DIR." >&2
               echo "E: eight proprietary Samsung blobs are compiled into this" >&2
               echo "E: kernel; get them with build/extract-vendor-firmware.sh" >&2
@@ -119,6 +121,11 @@ security-hook-default"
 FIRMWARE="calliope_sram.bin calliope_dram.bin calliope_iva.bin tfadsp.bin \
 AP_AUDIO_SLSI.bin APBargeIn_AUDIO_SLSI.bin APBiBF_AUDIO_SLSI.bin Tfa9872.cnt"
 
+# --runtime-firmware: nothing proprietary is built in; ABOX retries loading its
+# firmware from the vendor partition (firmware_class.path) once it is mounted.
+[ "$RUNTIME_FIRMWARE" = 0 ] || [ "$PROFILE" = full ] || {
+    echo "E: --runtime-firmware applies to --profile full" >&2; exit 2; }
+[ "$RUNTIME_FIRMWARE" = 0 ] || FIRMWARE=""
 if [ "$PROFILE" = full ]; then
     for f in $FIRMWARE; do
         [ -f "$FW_DIR/$f" ] || { echo "E: missing firmware blob: $FW_DIR/$f" >&2; exit 1; }
@@ -287,6 +294,9 @@ fi
 if [ "$USB_PULLUP_STATE_FIX" = 1 ]; then
     PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/dwc3-pullup-state-before-pm.patch"
 fi
+if [ "$RUNTIME_FIRMWARE" = 1 ]; then
+    PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/abox-firmware-retry.patch"
+fi
 if [ "$PIDFD_WAIT" = 1 ]; then
     PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/waitid-pidfd.patch"
 fi
@@ -304,6 +314,7 @@ PATCH_PROFILE="$PROFILE"
 [ "$USB_SUPPLY_EVENTS" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-usb-supply-events"
 [ "$USB_PULLUP_STATE_FIX" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-usb-pullup-state-fix"
 [ "$PIDFD_WAIT" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-pidfd-wait"
+[ "$RUNTIME_FIRMWARE" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-runtime-firmware"
 if [ -e "$SENTINEL" ]; then
     was="$(cat "$SENTINEL" 2>/dev/null || echo unknown)"
     if [ "$was" != "$PATCH_PROFILE" ]; then
@@ -457,6 +468,7 @@ bluetooth_protocols=$BLUETOOTH_PROTOCOLS
 usb_supply_events=$USB_SUPPLY_EVENTS
 usb_pullup_state_fix=$USB_PULLUP_STATE_FIX
 pidfd_wait=$PIDFD_WAIT
+runtime_firmware=$RUNTIME_FIRMWARE
 rt_group_sched=$(if grep -q "^CONFIG_RT_GROUP_SCHED=y$" "$SRC/.config"; then echo y; else echo n; fi)
 patches=$(for p in $PATCH_LIST; do basename "$p"; done | tr "
 " " ")
