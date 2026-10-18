@@ -77,7 +77,9 @@ Hardware, 18 October, owner present:
 ```
 
 Root RO, AppArmor Y, zero failed units, no `invalid sample rate`, ABOX
-`active`. **Owner confirms speaker audio works.** Not yet tested: call audio
-(SIM moved), Bluetooth audio, sleep/resume audio, cold boot repetitions.
+`active`. **Owner confirms speaker audio works.** Unplugged sleep: 15 real
+`PM: suspend entry/exit` cycles (longest 2 min 39 s), no audio errors, zero
+failed units, and the owner confirms sound after wake. Not yet tested: call
+audio (SIM moved), Bluetooth audio, repeated cold boots, overnight soak.
 Rollback: `flash-boot-image.sh` with the aa17 image and the `7d5855ef…` current
 hash.
