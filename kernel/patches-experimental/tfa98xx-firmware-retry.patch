@@ -1,0 +1,61 @@
+--- a/sound/soc/codecs/tfa9872/tfa98xx.c
++++ b/sound/soc/codecs/tfa9872/tfa98xx.c
+@@ -2918,6 +2918,18 @@
+ 
+ static struct tfa_container *container;
+ 
++/*
++ * The container is on the vendor partition (firmware_class.path), which is
++ * mounted seconds after the probe-time request. Retry a direct load instead
++ * of leaving the amplifier without its rate/profile table for the boot.
++ */
++#define TFA98XX_FW_RETRY_MS	1000
++#define TFA98XX_FW_RETRY_MAX	120
++static struct tfa98xx *tfa98xx_fw_retry_dev;
++static int tfa98xx_fw_retries;
++static void tfa98xx_retry_container(struct work_struct *work);
++static DECLARE_DELAYED_WORK(tfa98xx_fw_retry_work, tfa98xx_retry_container);
++
+ static void
+ tfa98xx_container_loaded(const struct firmware *cont,	void *context)
+ {
+@@ -2938,10 +2950,22 @@
+ 	tfa98xx->dsp_fw_state = TFA98XX_DSP_FW_FAIL;
+ 
+ 	if (!cont) {
++		if (tfa98xx_fw_retries < TFA98XX_FW_RETRY_MAX) {
++			tfa98xx_fw_retries++;
++			tfa98xx_fw_retry_dev = tfa98xx;
++			tfa98xx->dsp_fw_state = TFA98XX_DSP_FW_PENDING;
++			schedule_delayed_work(&tfa98xx_fw_retry_work,
++					msecs_to_jiffies(TFA98XX_FW_RETRY_MS));
++			mutex_unlock(&probe_lock);
++			return;
++		}
+ 		pr_err("Failed to read %s\n", fw_name);
+ 		mutex_unlock(&probe_lock);
+ 		return;
+ 	}
++	if (tfa98xx_fw_retries)
++		pr_info("tfa98xx: %s found after %d retries\n", fw_name,
++			tfa98xx_fw_retries);
+ 
+ 	pr_debug("loaded %s - size: %zu\n", fw_name,
+ 					cont ? cont->size : 0);
+@@ -3084,6 +3108,16 @@
+ 	mutex_unlock(&probe_lock);
+ }
+ 
++static void tfa98xx_retry_container(struct work_struct *work)
++{
++	struct tfa98xx *tfa98xx = tfa98xx_fw_retry_dev;
++	const struct firmware *cont = NULL;
++
++	if (request_firmware_direct(&cont, fw_name, tfa98xx->dev))
++		cont = NULL;
++	tfa98xx_container_loaded(cont, tfa98xx);
++}
++
+ static int tfa98xx_load_container(struct tfa98xx *tfa98xx)
+ {
+ 	mutex_lock(&probe_lock);

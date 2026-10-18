@@ -296,6 +296,7 @@ if [ "$USB_PULLUP_STATE_FIX" = 1 ]; then
 fi
 if [ "$RUNTIME_FIRMWARE" = 1 ]; then
     PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/abox-firmware-retry.patch"
+    PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/tfa98xx-firmware-retry.patch"
 fi
 if [ "$PIDFD_WAIT" = 1 ]; then
     PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/waitid-pidfd.patch"
