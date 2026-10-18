@@ -58,3 +58,26 @@ Give the tfa98xx container/DSP firmware load the same bounded retry (or
 deferred load on first stream), then rebuild, flash with the owner present,
 and test speaker, call audio and sleep. Keep aa17 (built-in firmware) as the
 shipped kernel until that passes.
+
+## Candidate 2: ABOX + TFA9872 retry — speaker audio works
+
+`tfa98xx-firmware-retry.patch` adds the same bounded direct-load retry for
+`Tfa9872.cnt`; `--runtime-firmware` applies both. CI run 39158814601 Image is
+`6d000a98…`. Against aa17's System.map, the only differences are the eight
+`_fw_*` symbols, the retry symbols, shifted initcall line numbers and one
+compiler-renamed static helper in the edited file. Boot image
+`boot-aa17rf2.img` is 53,624,832 bytes, SHA256 `7d5855ef…`, archived in
+`kernel-builds-20261017`.
+
+Hardware, 18 October, owner present:
+
+```
+[    5.312133] samsung-abox 14a50000.abox: SRAM firmware found after 3 retries
+[    6.271030] tfa98xx_container_loaded(): tfa98xx: Tfa9872.cnt found after 4 retries
+```
+
+Root RO, AppArmor Y, zero failed units, no `invalid sample rate`, ABOX
+`active`. **Owner confirms speaker audio works.** Not yet tested: call audio
+(SIM moved), Bluetooth audio, sleep/resume audio, cold boot repetitions.
+Rollback: `flash-boot-image.sh` with the aa17 image and the `7d5855ef…` current
+hash.
