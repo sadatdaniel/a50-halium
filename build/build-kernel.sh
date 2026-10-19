@@ -385,8 +385,8 @@ if [ "$SYSTEMPART" = 1 ]; then
     python3 - "$SRC/build.sh" <<'PY'
 import sys
 p = sys.argv[1]; s = open(p).read()
-old = 'systemd.unified_cgroup_hierarchy=0"''
-new = 'systemd.unified_cgroup_hierarchy=0 systempart=/dev/disk/by-partlabel/system"''
+old = "systemd.unified_cgroup_hierarchy=0\"'"
+new = "systemd.unified_cgroup_hierarchy=0 systempart=/dev/disk/by-partlabel/system\"'"
 if new not in s:
     assert s.count(old) == 1, "CONFIG_CMDLINE line not found exactly once"
     open(p, 'w').write(s.replace(old, new))
