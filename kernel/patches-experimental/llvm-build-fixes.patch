@@ -1,0 +1,198 @@
+diff --git a/Makefile b/Makefile
+index 16c9b1b546..ce0d90210a 100644
+--- a/Makefile
++++ b/Makefile
+@@ -272,6 +272,7 @@ else
+ scripts/Kbuild.include: ;
+ include scripts/Kbuild.include
+ 
++
+ # Read KERNELRELEASE from include/config/kernel.release (if it exists)
+ KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)
+ KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)
+@@ -375,6 +376,14 @@ HOSTCFLAGS   := -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 \
+ 		-fomit-frame-pointer -std=gnu89 $(HOST_LFS_CFLAGS)
+ HOSTCXXFLAGS := -O2 $(HOST_LFS_CFLAGS)
+ HOSTLDFLAGS  := $(HOST_LFS_LDFLAGS)
++# Hermetic LLVM builds (the Ubuntu Touch adaptation tools set LLVM=1 and
++# a PATH with no GNU ld) cannot link single-file host programs: 4.14 kbuild
++# never passes HOSTLDFLAGS to the host-csingle rule and clang otherwise
++# invokes plain "ld", which does not exist there. Together with the
++# scripts/Makefile.host change, make every host link use lld in that mode.
++ifeq ($(LLVM),1)
++HOSTLDFLAGS += -fuse-ld=lld --rtlib=compiler-rt
++endif
+ HOST_LOADLIBES := $(HOST_LFS_LIBS)
+ 
+ # Make variables (CC, etc...)
+@@ -382,6 +391,9 @@ CPP		= $(CC) -E
+ ifneq ($(LLVM),)
+ CC		= clang
+ LD		= ld.lld
++LDLLD		= ld.lld
++LLVMNM		= llvm-nm
++LLVMOBJCOPY	= llvm-objcopy
+ LDGOLD		= ld.gold
+ AR		= llvm-ar
+ NM		= llvm-nm
+@@ -773,6 +785,12 @@ KBUILD_CFLAGS += -Os
+ endif
+ 
+ ifeq ($(cc-name),clang)
++# The tree's own build.sh passes KCFLAGS=-Wno-error for every clang build
++# (the Proton invocation); without it clang's -Wunused-command-line-argument
++# under -Werror turns the redundant -march/-mcpu pair below into a fatal
++# error. Carry the same behaviour for bare-make builds, e.g. the Ubuntu
++# Touch adaptation tools.
++KBUILD_CFLAGS += -Wno-error
+ ifeq ($(CONFIG_SOC_EXYNOS9610), y)
+ KBUILD_CFLAGS	+= -march=armv8-a+crypto+crc+sha2+aes -mtune=cortex-a53 \
+ 			-mcpu=cortex-a53+crypto+crc+sha2+aes
+@@ -1431,6 +1449,7 @@ else ifdef CONFIG_LTO_GCC
+   endif
+ endif
+ # Make sure compiler supports LTO flags
++
+ ifdef lto-flags
+   ifeq ($(call cc-option, $(lto-flags)),)
+ 	@echo Cannot use CONFIG_LTO: $(lto-flags) not supported by compiler \
+diff --git a/arch/arm64/kernel/vdso32/Makefile b/arch/arm64/kernel/vdso32/Makefile
+index e42a7d679c..45baccf4e0 100644
+--- a/arch/arm64/kernel/vdso32/Makefile
++++ b/arch/arm64/kernel/vdso32/Makefile
+@@ -5,7 +5,13 @@
+ # A mix between the arm64 and arm vDSO Makefiles.
+ 
+ ifeq ($(cc-name),clang)
+-  CC_ARM32 := $(CC) $(CLANG_TARGET_ARM32) -no-integrated-as $(CLANG_GCC32_TC) $(CLANG_PREFIX32)
++  ifeq ($(LLVM_IAS),1)
++    # Hermetic LLVM builds (Ubuntu Touch adaptation tools) have no GNU as on
++    # PATH and --gcc-toolchain resolves to nothing; use the integrated one.
++    CC_ARM32 := $(CC) $(CLANG_TARGET_ARM32) $(CLANG_GCC32_TC) $(CLANG_PREFIX32)
++  else
++    CC_ARM32 := $(CC) $(CLANG_TARGET_ARM32) -no-integrated-as $(CLANG_GCC32_TC) $(CLANG_PREFIX32)
++  endif
+ else
+   CC_ARM32 := $(CROSS_COMPILE_ARM32)$(cc-name)
+ endif
+@@ -95,6 +101,12 @@ VDSO_LDFLAGS := $(VDSO_CPPFLAGS)
+ VDSO_LDFLAGS += -Wl,-Bsymbolic -Wl,--no-undefined -Wl,-soname=linux-vdso.so.1
+ VDSO_LDFLAGS += -Wl,-z,max-page-size=4096 -Wl,-z,common-page-size=4096
+ VDSO_LDFLAGS += -nostdlib -shared -mfloat-abi=soft
++# The link goes through the clang driver, whose default linker (ld) does
++# not exist in a hermetic LLVM PATH; use lld there like the rest of the
++# build (the 64-bit vDSO already links via $(LD)=ld.lld directly).
++ifeq ($(LLVM_IAS),1)
++VDSO_LDFLAGS += -fuse-ld=lld
++endif
+ VDSO_LDFLAGS += $(call cc32-ldoption,-Wl$(comma)--hash-style=sysv)
+ VDSO_LDFLAGS += $(call cc32-ldoption,-Wl$(comma)--build-id)
+ VDSO_LDFLAGS += $(call cc32-ldoption,-fuse-ld=bfd)
+diff --git a/drivers/misc/tzdev/Makefile b/drivers/misc/tzdev/Makefile
+index b51f0b1d97..06563c108b 100644
+--- a/drivers/misc/tzdev/Makefile
++++ b/drivers/misc/tzdev/Makefile
+@@ -47,3 +47,22 @@ obj-$(CONFIG_TZ_TELEMETRY)		+= tz_telemetry.o
+ obj-$(CONFIG_TZ_TRANSPORT)		+= tz_transport.o
+ 
+ obj-$(CONFIG_TZDEV_DEBUG)		+= tests/
++
++# tz_deploy_tzar.c embeds the TrustZone blobs via inline-asm .incbin with a
++# repo-root-relative path. GNU as found them from the build cwd of in-tree
++# builds; the integrated assembler (and O= builds generally) needs the
++# source root on the include path to resolve them.
++ccflags-y += -I$(srctree)
++
++# ThinLTO builds additionally RE-assemble that inline asm at link time,
++# with the linker running from the object tree - where the repo-relative
++# paths do not resolve and the resulting parse error aborts the link
++# (misreported as a segfault). Drop copies of the blobs into the object
++# tree at the same relative path so the link-time lookup succeeds.
++#
++# Done as a parse-time copy rather than a make rule: a pattern rule for
++# files inside $(obj) that also appear as prerequisites of $(obj) targets
++# gets discarded by make as a circular dependency under O= builds, and
++# the link then fails exactly the same way (observed 2026-09-01).
++$(shell mkdir -p $(obj) 2>/dev/null)
++$(shell for _b in startup.tzar startup_old.tzar; do 	test -f $(obj)/$$_b || cp $(srctree)/$(src)/$$_b $(obj)/$$_b 2>/dev/null; 	done)
+diff --git a/firmware/Makefile b/firmware/Makefile
+index 6329a9cefb..270e7393ab 100644
+--- a/firmware/Makefile
++++ b/firmware/Makefile
+@@ -100,3 +100,10 @@ targets := $(patsubst $(obj)/%,%, \
+ # Without this, built-in.o won't be created when it's empty, and the
+ # final vmlinux link will fail.
+ obj- := dummy
++
++# The generated %.gen.S files .incbin their blobs with paths relative to
++# the source root. GNU as found them from the cwd of in-tree builds; the
++# integrated assembler resolves .incbin from the build cwd, which for
++# O= builds is the object tree - put the source root on the assembler
++# include path so both resolve.
++asflags-y += -I$(srctree)
+diff --git a/include/linux/thread_info.h b/include/linux/thread_info.h
+index b2c786e9b1..3d7c36ebac 100644
+--- a/include/linux/thread_info.h
++++ b/include/linux/thread_info.h
+@@ -150,12 +150,14 @@ check_copy_size(const void *addr, size_t bytes, bool is_source)
+ {
+ 	int sz = __compiletime_object_size(addr);
+ 	if (unlikely(sz >= 0 && sz < bytes)) {
+-		if (!__builtin_constant_p(bytes))
+-			copy_overflow(sz, bytes);
+-		else if (is_source)
+-			__bad_copy_from();
+-		else
+-			__bad_copy_to();
++		/* __bad_copy_from/__bad_copy_to are compile-time-only sentinels
++		 * with no definition; clang under ThinLTO can mis-evaluate
++		 * __compiletime_object_size across TUs and actually emit the
++		 * call, breaking the final link (seen: undefined __bad_copy_from
++		 * referenced from snd_ctl_ioctl_compat with clang r383902).
++		 * Always take the runtime WARN instead.
++		 */
++		copy_overflow(sz, bytes);
+ 		return false;
+ 	}
+ 	check_object_size(addr, bytes, is_source);
+diff --git a/scripts/Makefile.host b/scripts/Makefile.host
+index 10e5c3cb89..8b7a52c007 100644
+--- a/scripts/Makefile.host
++++ b/scripts/Makefile.host
+@@ -96,7 +96,7 @@ hostcxx_flags  = -Wp,-MD,$(depfile) $(__hostcxx_flags)
+ # Create executable from a single .c file
+ # host-csingle -> Executable
+ quiet_cmd_host-csingle 	= HOSTCC  $@
+-      cmd_host-csingle	= $(HOSTCC) $(hostc_flags) -o $@ $< \
++      cmd_host-csingle	= $(HOSTCC) $(hostc_flags) $(HOSTLDFLAGS) -o $@ $< \
+ 	  	$(HOST_LOADLIBES) $(HOSTLOADLIBES_$(@F))
+ $(host-csingle): $(obj)/%: $(src)/%.c FORCE
+ 	$(call if_changed_dep,host-csingle)
+diff --git a/scripts/setlocalversion b/scripts/setlocalversion
+index e678618125..49f4f7c6f7 100755
+--- a/scripts/setlocalversion
++++ b/scripts/setlocalversion
+@@ -163,7 +163,7 @@ if test ! "$srctree" -ef .; then
+ fi
+ 
+ # CONFIG_LOCALVERSION and LOCALVERSION (if set)
+-res="${res} ${CONFIG_LOCALVERSION}${LOCALVERSION}"
++res="${res}${CONFIG_LOCALVERSION}${LOCALVERSION}"
+ 
+ # scm version string if not at a tagged commit
+ if test "$CONFIG_LOCALVERSION_AUTO" = "y"; then
+diff --git a/sound/soc/codecs/tfa9872/Makefile b/sound/soc/codecs/tfa9872/Makefile
+index 08e0904de1..83787ec150 100644
+--- a/sound/soc/codecs/tfa9872/Makefile
++++ b/sound/soc/codecs/tfa9872/Makefile
+@@ -17,6 +17,10 @@ TFA98XX_FLAGS           := -DUSE_TFA9872
+ #ccflags-y               += -I$(TFA_SRC_DIR)/inc
+ ccflags-y               := -I$(TFA_SRC_DIR)/inc
+ ccflags-y               += -Werror
++# clang warns (-Wignored-optimization-argument) about the GCC-only flags
++# below under this -Werror; keep the build working with the LLVM toolchain
++# the Ubuntu Touch adaptation tools use.
++ccflags-y               += -Wno-error=ignored-optimization-argument
+ ifdef TFADSP_32BITS
+ ccflags-y               += -DTFADSP_32BITS
+ endif

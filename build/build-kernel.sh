@@ -54,6 +54,7 @@ PIDFD_WAIT=0
 RUNTIME_FIRMWARE=0
 LLVM_IAS_BUILD=0
 SYSTEMPART=0
+LLVM_BUILD_FIXES=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -69,6 +70,7 @@ while [ $# -gt 0 ]; do
         --runtime-firmware) RUNTIME_FIRMWARE=1; shift ;;
         --llvm-ias) LLVM_IAS_BUILD=1; shift ;;
         --systempart) SYSTEMPART=1; shift ;;
+        --llvm-build-fixes) LLVM_BUILD_FIXES=1; shift ;;
         --usb-configfs-fix) USB_CONFIGFS_FIX=1; shift ;;
         --wifi-sleep-fix) WIFI_SLEEP_FIX=1; shift ;;
         --usb-otg-core-reinit) USB_OTG_CORE_REINIT=1; shift ;;
@@ -308,6 +310,12 @@ if [ "$LLVM_IAS_BUILD" = 1 ]; then
     PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/arm64-lib-weak-mem-ias.patch"
     export LLVM_IAS=1
 fi
+# --llvm-build-fixes: the old kernel branch's LLVM=1 build commits (Makefile,
+# vdso32, tzdev, firmware asm include, thread_info, setlocalversion, tfa9872),
+# isolated to test whether they cause the conventional-build hang.
+if [ "$LLVM_BUILD_FIXES" = 1 ]; then
+    PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/llvm-build-fixes.patch"
+fi
 if [ "$PIDFD_WAIT" = 1 ]; then
     PATCH_LIST="$PATCH_LIST $REPO_ROOT/kernel/patches-experimental/waitid-pidfd.patch"
 fi
@@ -328,6 +336,7 @@ PATCH_PROFILE="$PROFILE"
 [ "$RUNTIME_FIRMWARE" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-runtime-firmware"
 [ "$LLVM_IAS_BUILD" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-llvm-ias"
 [ "$SYSTEMPART" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-systempart"
+[ "$LLVM_BUILD_FIXES" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-llvm-build-fixes"
 if [ -e "$SENTINEL" ]; then
     was="$(cat "$SENTINEL" 2>/dev/null || echo unknown)"
     if [ "$was" != "$PATCH_PROFILE" ]; then
@@ -501,6 +510,7 @@ pidfd_wait=$PIDFD_WAIT
 runtime_firmware=$RUNTIME_FIRMWARE
 llvm_ias=$LLVM_IAS_BUILD
 systempart=$SYSTEMPART
+llvm_build_fixes=$LLVM_BUILD_FIXES
 rt_group_sched=$(if grep -q "^CONFIG_RT_GROUP_SCHED=y$" "$SRC/.config"; then echo y; else echo n; fi)
 patches=$(for p in $PATCH_LIST; do basename "$p"; done | tr "
 " " ")
