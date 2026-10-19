@@ -68,6 +68,13 @@ jobs:
       - name: Report what was produced
         run: cat out/build-manifest.txt out/sha256sums.txt
 
+      # Toolchain bisect: the exact compile commands of a few early-boot objects.
+      - name: Keep early-boot compile commands
+        run: |
+          cd kernel/src
+          sudo find . -name '.main.o.cmd' -path '*/init/*' -o -name '.setup.o.cmd' -path '*/arm64/kernel/*' -o -name '.head.o.cmd' -path '*/arm64/kernel/*' -o -name '.mmu.o.cmd' -path '*/arm64/mm/*' -o -name '.printk.o.cmd' -path '*/printk/*' | sudo tar -czf "$GITHUB_WORKSPACE/out/kernel-cmds.tar.gz" -T -
+          sudo chmod a+r "$GITHUB_WORKSPACE/out/kernel-cmds.tar.gz"
+
       # The reproducibility gate. kernel/expected-artifacts.sha256 records the
       # hashes a correct build of the current pin produces. If a change to the
       # pin, the patches or the build environment alters the output, this fails
@@ -91,6 +98,7 @@ jobs:
             out/build-manifest.txt
             out/kernel.config
             out/System.map
+            out/kernel-cmds.tar.gz
           retention-days: 30
 
       # A tag publishes the same artifacts as a release, so a flashable image
