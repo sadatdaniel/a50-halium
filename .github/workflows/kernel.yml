@@ -23,6 +23,10 @@ on:
         description: Extra build-kernel.sh options (non-default builds skip the hash gate)
         type: string
         default: ''
+      google_clang:
+        description: Bisect only - 'BRANCH clang-REV' of Google's prebuilt clang, mounted at /gclang
+        type: string
+        default: ''
 
 jobs:
   build:
@@ -42,10 +46,22 @@ jobs:
       - name: Build the build environment
         run: docker build -t a50-halium-build ./build
 
+      - name: Fetch Google prebuilt clang (bisect only)
+        if: inputs.google_clang != '' && inputs.google_clang != null
+        env:
+          GC: ${{ inputs.google_clang }}
+        run: |
+          set -- $GC
+          mkdir -p "$RUNNER_TEMP/gclang"
+          curl -fsSL "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/$1/$2.tar.gz" | tar -xz -C "$RUNNER_TEMP/gclang"
+          "$RUNNER_TEMP/gclang/bin/ld.lld" --version
+
       - name: Build the kernel
         run: |
+          mkdir -p "$RUNNER_TEMP/gclang"
           docker run --rm \
             -v "$PWD:/src" -w /src \
+            -v "$RUNNER_TEMP/gclang:/gclang:ro" \
             a50-halium-build \
             ./build/build-kernel.sh ${{ inputs.args }}
 

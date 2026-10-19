@@ -55,6 +55,7 @@ RUNTIME_FIRMWARE=0
 LLVM_IAS_BUILD=0
 SYSTEMPART=0
 LLVM_BUILD_FIXES=0
+LINKER_FROM=
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -71,6 +72,7 @@ while [ $# -gt 0 ]; do
         --llvm-ias) LLVM_IAS_BUILD=1; shift ;;
         --systempart) SYSTEMPART=1; shift ;;
         --llvm-build-fixes) LLVM_BUILD_FIXES=1; shift ;;
+        --linker-from) LINKER_FROM="$2"; shift 2 ;;
         --usb-configfs-fix) USB_CONFIGFS_FIX=1; shift ;;
         --wifi-sleep-fix) WIFI_SLEEP_FIX=1; shift ;;
         --usb-otg-core-reinit) USB_OTG_CORE_REINIT=1; shift ;;
@@ -419,6 +421,16 @@ if [ "$TC_ACTUAL" != "$TOOLCHAIN_COMMIT" ]; then
     exit 1
 fi
 
+# --- linker override (bisect only) -------------------------------------------
+# --linker-from DIR: link with DIR/bin/ld.lld (e.g. Google's prebuilt clang that
+# the UBports tools use) while compiling with the pinned Proton clang. Separates
+# compiler from linker in the conventional-kernel hang. Never for releases.
+if [ -n "$LINKER_FROM" ]; then
+    [ -x "$LINKER_FROM/bin/ld.lld" ] || { echo "E: no $LINKER_FROM/bin/ld.lld" >&2; exit 1; }
+    ln -sfn "$LINKER_FROM/bin/ld.lld" "$TOOLCHAIN/bin/ld.lld"
+    echo "I: linker overridden: $("$TOOLCHAIN/bin/ld.lld" --version | head -1)"
+fi
+
 # --- make the build deterministic --------------------------------------------
 # Without this section two builds of the same pin differ, and the sha256 sums
 # below would record noise rather than mean anything. Each export closes one
@@ -511,6 +523,7 @@ runtime_firmware=$RUNTIME_FIRMWARE
 llvm_ias=$LLVM_IAS_BUILD
 systempart=$SYSTEMPART
 llvm_build_fixes=$LLVM_BUILD_FIXES
+linker_from=$LINKER_FROM
 rt_group_sched=$(if grep -q "^CONFIG_RT_GROUP_SCHED=y$" "$SRC/.config"; then echo y; else echo n; fi)
 patches=$(for p in $PATCH_LIST; do basename "$p"; done | tr "
 " " ")
