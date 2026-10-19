@@ -53,6 +53,7 @@ USB_PULLUP_STATE_FIX=0
 PIDFD_WAIT=0
 RUNTIME_FIRMWARE=0
 LLVM_IAS_BUILD=0
+SYSTEMPART=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -67,6 +68,7 @@ while [ $# -gt 0 ]; do
         --pidfd-wait) PIDFD_WAIT=1; shift ;;
         --runtime-firmware) RUNTIME_FIRMWARE=1; shift ;;
         --llvm-ias) LLVM_IAS_BUILD=1; shift ;;
+        --systempart) SYSTEMPART=1; shift ;;
         --usb-configfs-fix) USB_CONFIGFS_FIX=1; shift ;;
         --wifi-sleep-fix) WIFI_SLEEP_FIX=1; shift ;;
         --usb-otg-core-reinit) USB_OTG_CORE_REINIT=1; shift ;;
@@ -325,6 +327,7 @@ PATCH_PROFILE="$PROFILE"
 [ "$PIDFD_WAIT" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-pidfd-wait"
 [ "$RUNTIME_FIRMWARE" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-runtime-firmware"
 [ "$LLVM_IAS_BUILD" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-llvm-ias"
+[ "$SYSTEMPART" = 0 ] || PATCH_PROFILE="$PATCH_PROFILE-systempart"
 if [ -e "$SENTINEL" ]; then
     was="$(cat "$SENTINEL" 2>/dev/null || echo unknown)"
     if [ "$was" != "$PATCH_PROFILE" ]; then
@@ -372,6 +375,23 @@ if [ -n "$APPARMOR" ]; then
         exit 1
     fi
     python3 "$REPO_ROOT/build/apply-apparmor-$APPARMOR.py" "$SRC/build.sh"
+fi
+
+# --- systempart (optional) ---------------------------------------------------
+# S-Boot ignores the boot image header command line, so the Halium "partition"
+# layout's systempart= has to be compiled in. Only for the system-partition
+# layout: with it, the initramfs prefers the partition over /data/ubuntu.img.
+if [ "$SYSTEMPART" = 1 ]; then
+    python3 - "$SRC/build.sh" <<'PY'
+import sys
+p = sys.argv[1]; s = open(p).read()
+old = 'systemd.unified_cgroup_hierarchy=0"''
+new = 'systemd.unified_cgroup_hierarchy=0 systempart=/dev/disk/by-partlabel/system"''
+if new not in s:
+    assert s.count(old) == 1, "CONFIG_CMDLINE line not found exactly once"
+    open(p, 'w').write(s.replace(old, new))
+print("I: CONFIG_CMDLINE carries systempart=/dev/disk/by-partlabel/system")
+PY
 fi
 
 # --- toolchain at the pinned commit ------------------------------------------
@@ -480,6 +500,7 @@ usb_pullup_state_fix=$USB_PULLUP_STATE_FIX
 pidfd_wait=$PIDFD_WAIT
 runtime_firmware=$RUNTIME_FIRMWARE
 llvm_ias=$LLVM_IAS_BUILD
+systempart=$SYSTEMPART
 rt_group_sched=$(if grep -q "^CONFIG_RT_GROUP_SCHED=y$" "$SRC/.config"; then echo y; else echo n; fi)
 patches=$(for p in $PATCH_LIST; do basename "$p"; done | tr "
 " " ")
