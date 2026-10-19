@@ -1,0 +1,54 @@
+diff --git a/arch/arm64/lib/memcpy.S b/arch/arm64/lib/memcpy.S
+index 6761393771..8dddee4eaf 100644
+--- a/arch/arm64/lib/memcpy.S
++++ b/arch/arm64/lib/memcpy.S
+@@ -68,9 +68,11 @@
+ 	stp \ptr, \regB, [\regC], \val
+ 	.endm
+ 
+-	.weak memcpy
++/* weak memcpy as a plain label: a second .globl after .weak is an error for
++ * clang's integrated assembler (upstream: SYM_FUNC_START_WEAK_PI). */
+ ENTRY(__memcpy)
+-ENTRY(memcpy)
++	.weak memcpy
++memcpy:
+ #include "copy_template.S"
+ 	ret
+ ENDPIPROC(memcpy)
+diff --git a/arch/arm64/lib/memmove.S b/arch/arm64/lib/memmove.S
+index f5ac945d2a..1ffeeac6b4 100644
+--- a/arch/arm64/lib/memmove.S
++++ b/arch/arm64/lib/memmove.S
+@@ -57,9 +57,11 @@ C_h	.req	x12
+ D_l	.req	x13
+ D_h	.req	x14
+ 
+-	.weak memmove
++/* weak memmove as a plain label: a second .globl after .weak is an error for
++ * clang's integrated assembler (upstream: SYM_FUNC_START_WEAK_PI). */
+ ENTRY(__memmove)
+-ENTRY(memmove)
++	.weak memmove
++memmove:
+ 	prfm    pldl1strm, [src, #L1_CACHE_BYTES]
+ 	cmp	dstin, src
+ 	b.lo	__memcpy
+diff --git a/arch/arm64/lib/memset.S b/arch/arm64/lib/memset.S
+index f2670a9f21..4301cd9cd4 100644
+--- a/arch/arm64/lib/memset.S
++++ b/arch/arm64/lib/memset.S
+@@ -54,9 +54,11 @@ dst		.req	x8
+ tmp3w		.req	w9
+ tmp3		.req	x9
+ 
+-	.weak memset
++/* weak memset as a plain label: a second .globl after .weak is an error for
++ * clang's integrated assembler (upstream: SYM_FUNC_START_WEAK_PI). */
+ ENTRY(__memset)
+-ENTRY(memset)
++	.weak memset
++memset:
+ 	mov	dst, dstin	/* Preserve return value.  */
+ 	and	A_lw, val, #255
+ 	orr	A_lw, A_lw, A_lw, lsl #8
